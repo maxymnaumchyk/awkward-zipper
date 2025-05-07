@@ -9,6 +9,15 @@ def local2globalindex(index, counts):
 
     This is the same as local2global(index, counts2offsets(counts))
     where local2global and counts2offsets are as in coffea.nanoevents.transforms
+
+    Example usage:
+    Index array
+    [[], [], [], [2]]
+    Counts array
+    [8, 7, 4, 7]
+    Output array will be:
+    [[], [], [], [21]]
+    (because 8+7+4+2=21)
     """
     offsets = np.empty(len(counts) + 1, dtype=np.int64)
     offsets[0] = 0
@@ -24,8 +33,17 @@ def nestedindex(indices):
     """
     Concatenate a list of indices along a new axis
     Outputs a jagged array with same outer shape as index arrays
-    Add examples to documentation?
 
+    Example usage:
+    First index array
+    [[0, 2, 4],
+     [8, 6]]
+    Second index array
+    [[1, 3, 5],
+     [-1, 7]]
+    Output
+    [[[0, 1], [2, 3], [4, 5]],
+     [[8, -1], [6, 7]]]
     """
     if not all(
         isinstance(index.layout, awkward.contents.listoffsetarray.ListOffsetArray)
@@ -73,6 +91,16 @@ def nestedindex(indices):
 def counts2nestedindex(local_counts, target_offsets):
     """Turn jagged local counts into doubly-jagged global index into a target
     Outputs a jagged array with same axis-0 shape as counts axis-1
+
+    Example usage:
+    Local counts
+    [[4, 3, 2],
+     [4, 2]]
+    Target offsets
+    [9, 6]
+    Target output
+    [[[0, 1, 2, 3], [4, 5, 6], [7, 8]],
+     [[9, 10, 11, 12], [13, 14]]]
     """
     if not isinstance(
         local_counts.layout, awkward.contents.listoffsetarray.ListOffsetArray
