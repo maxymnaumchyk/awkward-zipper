@@ -20,7 +20,7 @@ def local2globalindex(index, counts):
     (here 21=8+7+4+2)
     """
 
-    def _local2globalindex(index, counts):
+    def _local2globalindex(index, counts, virtual=False):
         offsets = counts2offsets(counts)
         index = index.mask[index >= 0] + offsets[:-1]
         index = index.mask[index < offsets[1:]]  # guard against out of bounds
@@ -28,7 +28,9 @@ def local2globalindex(index, counts):
         # index.type is N * var * int32?
         index = awkward.fill_none(index, -1)
         # use ensure array from coffea?
-        return awkward.flatten(index)
+        if virtual:
+            return awkward.flatten(index)
+        return index
 
     # VirtualArray
     if (not index.layout.is_all_materialized) or (
@@ -42,7 +44,7 @@ def local2globalindex(index, counts):
             shape=(awkward._nplikes.shape.unknown_length,),
             dtype=np.int64,
             generator=lambda: _local2globalindex(
-                awkward.materialize(index), awkward.materialize(counts)
+                awkward.materialize(index), awkward.materialize(counts), virtual=True
             ),
             shape_generator=None,
         )
