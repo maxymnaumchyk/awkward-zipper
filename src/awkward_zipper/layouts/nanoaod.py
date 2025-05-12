@@ -13,6 +13,7 @@ from awkward_zipper.kernels import (
     counts2offsets,
     distinct_children_deep,
     distinct_parent,
+    local2globalindex,
 )
 from awkward_zipper.layouts.base import BaseLayoutBuilder
 
@@ -230,7 +231,7 @@ class NanoAOD(BaseLayoutBuilder):
         collections = {k.split("_", maxsplit=1)[0] for k in fields - counter_fields}
 
         # check if data or simulation
-        # is_data = "GenPart" not in collections
+        is_data = "GenPart" not in collections
 
         new_fields = {}
         # Create offsets virtual arrays
@@ -257,33 +258,33 @@ class NanoAOD(BaseLayoutBuilder):
                 stacklevel=2,
             )
 
-        # TODO: make those kernels work with virtual arrays
-        # # Create global index virtual arrays for indirection
-        # for indexer, target in self.all_cross_references.items():
-        #     if target.startswith("Gen") and is_data:
-        #         continue
-        #     if indexer not in fields:
-        #         if self.warn_missing_crossrefs:
-        #             warnings.warn(
-        #                 f"Missing cross-reference index for {indexer} => {target}",
-        #                 RuntimeWarning,
-        #             )
-        #         continue
-        #     if "n" + target not in fields:
-        #         if self.warn_missing_crossrefs:
-        #             warnings.warn(
-        #                 f"Missing cross-reference target for {indexer} => {target}",
-        #                 RuntimeWarning,
-        #             )
-        #         continue
-        #     # convert nWhatever to a global index
-        #     # this used to be transforms.counts2offsets_form + transforms.local2global_form
-        #     arr_indexer = _non_materializing_get_field(array, indexer)
-        #     arr_target = _non_materializing_get_field(array, "n" + target)
-        #     new_fields[indexer + "G"] = local2globalindex(
-        #         arr_indexer, arr_target
-        #     )
+        # Create global index virtual arrays for indirection
+        for indexer, target in self.all_cross_references.items():
+            if target.startswith("Gen") and is_data:
+                continue
+            if indexer not in fields:
+                if self.warn_missing_crossrefs:
+                    warnings.warn(
+                        f"Missing cross-reference index for {indexer} => {target}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                continue
+            if "n" + target not in fields:
+                if self.warn_missing_crossrefs:
+                    warnings.warn(
+                        f"Missing cross-reference target for {indexer} => {target}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                continue
+            # convert nWhatever to a global index
+            # this used to be transforms.counts2offsets_form + transforms.local2global_form in coffea
+            arr_indexer = _non_materializing_get_field(array, indexer)
+            arr_target = _non_materializing_get_field(array, "n" + target)
+            new_fields[indexer + "G"] = local2globalindex(arr_indexer, arr_target)
 
+        # TODO: make those kernels work with virtual arrays
         # # Create nested indexer from Idx1, Idx2, ... arrays
         # for name, indexers in self.nested_items.items():
         #     if all(idx in new_fields for idx in indexers):

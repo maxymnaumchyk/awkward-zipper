@@ -5,28 +5,53 @@ import numpy as np
 
 def local2globalindex(index, counts):
     """
-    Convert a local index to a global index
+    Convert a jagged local index to a global index
 
     This is the same as local2global(index, counts2offsets(counts))
     where local2global and counts2offsets are as in coffea.nanoevents.transforms
 
     Example usage:
     Index array
-    [[], [], [], [2]]
+    [[], [1], [], [2, 3]]
     Counts array
     [8, 7, 4, 7]
     Output array will be:
-    [[], [], [], [21]]
-    (because 8+7+4+2=21)
+    [[], [9], [], [21, 22]]
+    (here 21=8+7+4+2)
     """
-    offsets = np.empty(len(counts) + 1, dtype=np.int64)
-    offsets[0] = 0
-    np.cumsum(counts, out=offsets[1:])
-    index = index.mask[index >= 0] + offsets[:-1]
-    index = index.mask[index < offsets[1:]]  # guard against out of bounds
-    # workaround ValueError: can not (unsafe) zip ListOffsetArrays with non-NumpyArray contents
-    # index.type is N * var * int32?
-    return awkward.fill_none(index, -1)
+
+    def _local2globalindex(index, counts):
+        offsets = counts2offsets(counts)
+        index = index.mask[index >= 0] + offsets[:-1]
+        index = index.mask[index < offsets[1:]]  # guard against out of bounds
+        # workaround ValueError: can not (unsafe) zip ListOffsetArrays with non-NumpyArray contents
+        # index.type is N * var * int32?
+        index = awkward.fill_none(index, -1)
+        # use ensure array from coffea?
+        return awkward.flatten(index)
+
+    # VirtualArray
+    if (not index.layout.is_all_materialized) or (
+        not counts.layout.is_all_materialized
+    ):
+        index_data = index.layout.content.data
+        # resulting global index will have the same offsets as local index
+        index_offsets = index.layout.offsets
+        index_content = awkward._nplikes.virtual.VirtualArray(
+            nplike=index_data._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=np.int64,
+            generator=lambda: _local2globalindex(
+                awkward.materialize(index), awkward.materialize(counts)
+            ),
+            shape_generator=None,
+        )
+        index_content = awkward.contents.numpyarray.NumpyArray(index_content)
+        return awkward.contents.ListOffsetArray(
+            offsets=index_offsets, content=index_content
+        )
+    # concrete array
+    return _local2globalindex(index, counts)
 
 
 def nestedindex(indices):
@@ -133,7 +158,8 @@ def counts2nestedindex(local_counts, target_offsets):
 def counts2offsets(counts):
     # Cumulative sum of counts
     def _counts2offsets(counts):
-        offsets = np.empty(len(counts) + 1, dtype=counts.dtype)
+        # awkward index default type is int64, so we use the same type for new arrays
+        offsets = np.empty(len(counts) + 1, dtype=np.int64)
         offsets[0] = 0
         np.cumsum(counts, out=offsets[1:])
         return offsets
@@ -145,7 +171,7 @@ def counts2offsets(counts):
         return awkward._nplikes.virtual.VirtualArray(
             nplike=virtual_array._nplike,
             shape=(awkward._nplikes.shape.unknown_length,),
-            dtype=virtual_array.dtype,
+            dtype=np.int64,
             generator=lambda: _counts2offsets(virtual_array.materialize()),
             shape_generator=None,
         )
