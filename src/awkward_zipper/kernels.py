@@ -46,7 +46,7 @@ def local2globalindex(index, counts):
             generator=lambda: _local2globalindex(
                 awkward.materialize(index), awkward.materialize(counts), virtual=True
             ),
-            shape_generator=None,
+            shape_generator=index_data.shape,
         )
         index_content = awkward.contents.numpyarray.NumpyArray(index_content)
         return awkward.contents.ListOffsetArray(
