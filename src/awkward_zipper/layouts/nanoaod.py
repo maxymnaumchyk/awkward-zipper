@@ -234,10 +234,10 @@ class NanoAOD(BaseLayoutBuilder):
         is_data = "GenPart" not in collections
 
         new_fields = {}
-        # Create offsets virtual arrays
-        for name in counter_fields:
-            arr = _non_materializing_get_field(array, name)
-            new_fields[name.replace("n", "o", 1)] = counts2offsets(arr)
+        # # Create offsets virtual arrays
+        # for name in counter_fields:
+        #     arr = _non_materializing_get_field(array, name)
+        #     new_fields[name.replace("n", "o", 1)] = counts2offsets(arr)
 
         # Check the presence of the event_ids
         missing_event_ids = [
@@ -308,7 +308,7 @@ class NanoAOD(BaseLayoutBuilder):
         for name in collections:
             name_with_underscore = name + "_"
             mixin = self.mixins.get(name, "NanoCollection")
-            if "o" + name in new_fields and name not in fields:
+            if "n" + name in fields and name not in fields:
                 content = {}
                 # buffers in `array`
                 for field in _get_collection_fields(name_with_underscore, fields):
@@ -368,12 +368,12 @@ class NanoAOD(BaseLayoutBuilder):
                 )
 
                 # wrap as jagged array
-                offsets = _non_materializing_get_field(new_fields, "o" + name)
+                offsets = counts2offsets(counts)
                 offsets = awkward.index.Index(offsets)
                 output[name] = awkward.contents.ListOffsetArray(
                     offsets=offsets, content=record
                 )
-            elif ("o" + name) in fields or name in fields:
+            elif ("n" + name) in fields or name in fields:
                 # list singleton (can use branch's own offsets) or singleton
                 arr = _non_materializing_get_field(array, name)
                 output[name] = awkward.to_layout(arr)
