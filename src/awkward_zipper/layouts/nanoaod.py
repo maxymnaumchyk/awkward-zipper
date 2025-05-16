@@ -14,6 +14,7 @@ from awkward_zipper.kernels import (
     distinct_children_deep,
     distinct_parent,
     local2globalindex,
+    nestedindex,
 )
 from awkward_zipper.layouts.base import BaseLayoutBuilder
 
@@ -283,6 +284,13 @@ class NanoAOD(BaseLayoutBuilder):
             arr_indexer = _non_materializing_get_field(array, indexer)
             arr_target = _non_materializing_get_field(array, "n" + target)
             new_fields[indexer + "G"] = local2globalindex(arr_indexer, arr_target)
+
+        # Create nested indexer from Idx1, Idx2, ... arrays
+        for name, indexers in self.nested_items.items():
+            if all(idx in new_fields for idx in indexers):
+                new_fields[name] = nestedindex(
+                    [_non_materializing_get_field(new_fields, idx) for idx in indexers]
+                )
 
         # TODO: make those kernels work with virtual arrays
         # # Create nested indexer from Idx1, Idx2, ... arrays

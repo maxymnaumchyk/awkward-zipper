@@ -49,8 +49,12 @@ def local2globalindex(index, counts):
             shape_generator=lambda: index_data.shape,
         )
         index_content = awkward.contents.numpyarray.NumpyArray(index_content)
-        return awkward.contents.ListOffsetArray(
-            offsets=index_offsets, content=index_content
+        return awkward.Array(
+            awkward.contents.ListOffsetArray(
+                offsets=index_offsets,
+                content=index_content,
+                parameters=awkward.parameters(index),
+            )
         )
     # concrete array
     return _local2globalindex(index, counts)
@@ -72,47 +76,123 @@ def nestedindex(indices):
     [[[0, 1], [2, 3], [4, 5]],
      [[8, -1], [6, 7]]]
     """
+
+    def _nestedindex(indices):
+        # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
+
+        # store offsets to later reapply them to the arrays
+        offsets_stored = indices[0].layout.offsets
+        # also store parameters
+        parameters = {}
+        for i, idx in enumerate(indices):
+            if "__doc__" in parameters:
+                parameters["__doc__"] += " and "
+                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
+            else:
+                parameters["__doc__"] = "nested from "
+                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
+            # flatten the index
+            indices[i] = awkward.Array(idx.layout.content)
+
+        n = len(indices)
+        out = np.empty(n * len(indices[0]), dtype="int64")
+        for i, idx in enumerate(indices):
+            #  index arrays should all be same shape flat arrays
+            out[i::n] = idx
+
+        offsets = np.arange(0, len(out) + 1, n, dtype=np.int64)
+        out = awkward.Array(
+            awkward.contents.ListOffsetArray(
+                awkward.index.Index64(offsets),
+                awkward.contents.NumpyArray(out),
+            )
+        )
+        # reapply the offsets
+        return awkward.Array(
+            awkward.contents.ListOffsetArray(
+                offsets_stored,
+                out.layout,
+                parameters=parameters,
+            )
+        )
+
+    def _nestedindex_content(indices):
+        # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
+        for i, idx in enumerate(indices):
+            # flatten the index
+            indices[i] = awkward.Array(idx.layout.content)
+
+        n = len(indices)
+        out = np.empty(n * len(indices[0]), dtype="int64")
+        for i, idx in enumerate(indices):
+            #  index arrays should all be same shape flat arrays
+            out[i::n] = idx
+
+        return out
+
+    def _get_nested_index_offsets(nested_index_content, n):
+        return np.arange(0, len(nested_index_content) + 1, n, dtype=np.int64)
+
+    def _combine_parameters(indices):
+        parameters = {}
+        for idx in indices:
+            if "__doc__" in parameters:
+                parameters["__doc__"] += " and "
+                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
+            else:
+                parameters["__doc__"] = "nested from "
+                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
+        return parameters
+
     if not all(
-        isinstance(index.layout, awkward.contents.listoffsetarray.ListOffsetArray)
+        isinstance(
+            awkward.to_layout(index), awkward.contents.listoffsetarray.ListOffsetArray
+        )
         for index in indices
     ):
         raise RuntimeError
-    # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
 
-    # store offsets to later reapply them to the arrays
-    offsets_stored = indices[0].layout.offsets
-    # also store parameters
-    parameters = {}
-    for i, idx in enumerate(indices):
-        if "__doc__" in parameters:
-            parameters["__doc__"] += " and "
-            parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
-        else:
-            parameters["__doc__"] = "nested from "
-            parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
-        # flatten the index
-        indices[i] = awkward.Array(idx.layout.content)
+    # VirtualArray
+    if not all(awkward.to_layout(index).is_all_materialized for index in indices):
+        index_data = indices[0].layout.content.data
+        # store offsets to later reapply them to the arrays
+        offsets_stored = indices[0].layout.offsets
+        nested_index_content = awkward._nplikes.virtual.VirtualArray(
+            nplike=index_data._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=np.int64,
+            generator=lambda: _nestedindex_content(
+                [awkward.materialize(idx) for idx in indices]
+            ),
+            shape_generator=None,
+        )
+        nested_index_offsets = awkward._nplikes.virtual.VirtualArray(
+            nplike=index_data._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=np.int64,
+            generator=lambda: _get_nested_index_offsets(
+                awkward.materialize(nested_index_content), len(indices)
+            ),
+            shape_generator=None,
+        )
+        # combine offsets and content
+        nested_index = awkward.contents.ListOffsetArray(
+            awkward.index.Index64(nested_index_offsets),
+            awkward.contents.NumpyArray(nested_index_content),
+        )
+        # combine the parameters
+        parameters = _combine_parameters(indices)
+        # reapply the offsets
+        return awkward.Array(
+            awkward.contents.ListOffsetArray(
+                offsets_stored,
+                nested_index,
+                parameters=parameters,
+            )
+        )
 
-    n = len(indices)
-    out = np.empty(n * len(indices[0]), dtype="int64")
-    for i, idx in enumerate(indices):
-        #  index arrays should all be same shape flat arrays
-        out[i::n] = idx
-    offsets = np.arange(0, len(out) + 1, n, dtype=np.int64)
-    out = awkward.Array(
-        awkward.contents.ListOffsetArray(
-            awkward.index.Index64(offsets),
-            awkward.contents.NumpyArray(out),
-        )
-    )
-    # reapply the offsets
-    return awkward.Array(
-        awkward.contents.ListOffsetArray(
-            offsets_stored,
-            out.layout,
-            parameters=parameters,
-        )
-    )
+    # concrete array
+    return _nestedindex(indices)
 
 
 def counts2nestedindex(local_counts, target_offsets):
