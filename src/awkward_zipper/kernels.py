@@ -49,6 +49,7 @@ def local2globalindex(index, counts):
             shape_generator=lambda: index_data.shape,
         )
         index_content = awkward.contents.numpyarray.NumpyArray(index_content)
+        # create new parameters for the final array
         parameters = awkward.parameters(index)
         parameters["__doc__"] = "global " + parameters["__doc__"]
         return awkward.Array(
