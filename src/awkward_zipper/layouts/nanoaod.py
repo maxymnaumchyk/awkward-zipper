@@ -293,11 +293,6 @@ class NanoAOD(BaseLayoutBuilder):
                 )
 
         # TODO: make those kernels work with virtual arrays
-        # # Create nested indexer from Idx1, Idx2, ... arrays
-        # for name, indexers in self.nested_items.items():
-        #     if all(idx in new_fields for idx in indexers):
-        #         new_fields[name] = nestedindex([_non_materializing_get_field(new_fields, idx) for idx in indexers])
-
         # # Create nested indexer from n* counts arrays
         # for name, (local_counts, target) in self.nested_index_items.items():
         #     if local_counts in fields and "n" + target in fields:
@@ -328,13 +323,14 @@ class NanoAOD(BaseLayoutBuilder):
                     content[field.removeprefix(name_with_underscore)] = (
                         awkward.contents.NumpyArray(
                             buffers["node1-data"],
-                            parameters=arr.layout.content.parameters,
+                            parameters=arr.layout.parameters,
                         )
                     )
 
                 # new buffers in `new_fields`
                 for field in _get_collection_fields(name_with_underscore, new_fields):
                     arr = _non_materializing_get_field(new_fields, field)
+                    parameters = arr.layout.parameters
                     *_, buffers = awkward.to_buffers(arr)
                     if field in self.nested_items:
                         # doubly-jagged case
@@ -348,13 +344,16 @@ class NanoAOD(BaseLayoutBuilder):
                                 content=awkward.contents.NumpyArray(
                                     buffers["node2-data"]
                                 ),
+                                parameters=parameters,
                             )
                         )
                     else:
                         assert {"node0-offsets", "node1-data"} == set(buffers)
                         # take flat data
                         content[field.removeprefix(name_with_underscore)] = (
-                            awkward.contents.NumpyArray(buffers["node1-data"])
+                            awkward.contents.NumpyArray(
+                                buffers["node1-data"], parameters=parameters
+                            )
                         )
 
                 _content = (*content.values(),)
