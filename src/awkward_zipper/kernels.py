@@ -87,10 +87,9 @@ def nestedindex(indices):
         for i, idx in enumerate(indices):
             if "__doc__" in parameters:
                 parameters["__doc__"] += " and "
-                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
             else:
                 parameters["__doc__"] = "nested from "
-                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
+            parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
             # flatten the index
             indices[i] = awkward.Array(idx.layout.content)
 
@@ -138,10 +137,10 @@ def nestedindex(indices):
         for idx in indices:
             if "__doc__" in parameters:
                 parameters["__doc__"] += " and "
-                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
             else:
                 parameters["__doc__"] = "nested from "
-                parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
+
+            parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
         return parameters
 
     if not all(
