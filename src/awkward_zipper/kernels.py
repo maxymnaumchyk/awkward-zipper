@@ -211,6 +211,26 @@ def counts2nestedindex(local_counts, target_offsets):
     [[[0, 1, 2, 3], [4, 5, 6], [7, 8]],
      [[9, 10, 11, 12], [13, 14]]]
     """
+
+    def _arange(array):
+        return np.arange(array[-1], dtype=np.int64)
+
+    def _flatten(array):
+        return awkward.flatten(array)
+
+    def _process_array(array, data, function, dtype=np.int64):
+        # Virtual array
+        if data is not None:
+            return awkward._nplikes.virtual.VirtualArray(
+                nplike=data._nplike,
+                shape=(awkward._nplikes.shape.unknown_length,),
+                dtype=dtype,
+                generator=lambda: function(array),
+                shape_generator=None,
+            )
+        # concrete array
+        return function(array)
+
     if not isinstance(
         local_counts.layout, awkward.contents.listoffsetarray.ListOffsetArray
     ):
@@ -219,22 +239,36 @@ def counts2nestedindex(local_counts, target_offsets):
         raise RuntimeError
 
     # count offsets the same way as with counts2offsets in coffea.nanoevents.transforms
-    offsets = np.empty(len(target_offsets) + 1, dtype=np.int64)
-    offsets[0] = 0
-    np.cumsum(target_offsets, out=offsets[1:])
+    offsets = counts2offsets(target_offsets)
 
     # store offsets to later reapply them to the arrays
     offsets_stored = local_counts.layout.offsets
 
-    out = awkward.unflatten(
-        np.arange(offsets[-1], dtype=np.int64),
-        awkward.flatten(local_counts),
+    # Check if VirtualArray
+    local_counts_data = local_counts_data_dtype = None
+    if not all(
+        awkward.to_layout(_).is_all_materialized for _ in (local_counts, target_offsets)
+    ):
+        local_counts_data = local_counts.layout.content.data
+        local_counts_data_dtype = local_counts_data.dtype
+
+    nested_index_content = _process_array(offsets, local_counts_data, _arange)
+    flat_counts = _process_array(
+        local_counts, local_counts_data, _flatten, dtype=local_counts_data_dtype
     )
+
+    nested_index_offsets = counts2offsets(flat_counts)
+    # combine offsets and content
+    out = awkward.contents.ListOffsetArray(
+        awkward.index.Index64(nested_index_offsets),
+        awkward.contents.NumpyArray(nested_index_content),
+    )
+
     # reapply the offsets
     return awkward.Array(
         awkward.contents.ListOffsetArray(
             offsets_stored,
-            out.layout,
+            out,
         )
     )
 
@@ -250,8 +284,16 @@ def counts2offsets(counts):
 
     # VirtualArray
     # if isinstance(counts.layout.data, awkward._nplikes.virtual.VirtualArray):
-    if not counts.layout.is_all_materialized:
+    if (
+        isinstance(counts, awkward._nplikes.virtual.VirtualArray)
+        and not counts.is_materialized
+    ):
+        virtual_array = counts
+    elif not counts.layout.is_all_materialized:
         virtual_array = counts.layout.data
+    else:
+        virtual_array = None
+    if virtual_array is not None:
         return awkward._nplikes.virtual.VirtualArray(
             nplike=virtual_array._nplike,
             shape=(awkward._nplikes.shape.unknown_length,),

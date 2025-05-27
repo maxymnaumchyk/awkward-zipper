@@ -10,6 +10,7 @@ from awkward_zipper.awkward_util import (
 )
 from awkward_zipper.kernels import (
     children,
+    counts2nestedindex,
     counts2offsets,
     distinct_children_deep,
     distinct_parent,
@@ -292,16 +293,15 @@ class NanoAOD(BaseLayoutBuilder):
                     [_non_materializing_get_field(new_fields, idx) for idx in indexers]
                 )
 
-        # TODO: make those kernels work with virtual arrays
-        # # Create nested indexer from n* counts arrays
-        # for name, (local_counts, target) in self.nested_index_items.items():
-        #     if local_counts in fields and "n" + target in fields:
-        #         arr_local_counts = _non_materializing_get_field(array, local_counts)
-        #         arr_target = _non_materializing_get_field(array, "n" + target)
-        #         new_fields[name] = counts2nestedindex(
-        #             arr_local_counts, arr_target
-        #         )
+        # Create nested indexer from n* counts arrays
+        for name, (local_counts, target) in self.nested_index_items.items():
+            if local_counts in fields and "n" + target in fields:
+                arr_local_counts = _non_materializing_get_field(array, local_counts)
+                arr_target = _non_materializing_get_field(array, "n" + target)
+                # this used to be transforms.counts2nestedindex_form + transforms.local2global_form in coffea
+                new_fields[name] = counts2nestedindex(arr_local_counts, arr_target)
 
+        # TODO: make those kernels work with virtual arrays
         # # Create any special arrays
         # for name, (fcn, args) in self.special_items.items():
         #     if all(k in fields for k in args):
@@ -332,7 +332,7 @@ class NanoAOD(BaseLayoutBuilder):
                     arr = _non_materializing_get_field(new_fields, field)
                     parameters = arr.layout.parameters
                     *_, buffers = awkward.to_buffers(arr)
-                    if field in self.nested_items:
+                    if field in self.nested_items | self.nested_index_items:
                         # doubly-jagged case
                         assert {"node0-offsets", "node1-offsets", "node2-data"} == set(
                             buffers
