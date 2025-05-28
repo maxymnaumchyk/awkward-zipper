@@ -150,21 +150,21 @@ class NanoAOD(BaseLayoutBuilder):
         "GenPart_childrenIdxG": (
             children,
             (
-                "oGenPart",
+                "nGenPart",
                 "GenPart_genPartIdxMotherG",
             ),
         ),
         "GenPart_distinctChildrenIdxG": (
             children,
             (
-                "oGenPart",
+                "nGenPart",
                 "GenPart_distinctParentIdxG",
             ),
         ),
         "GenPart_distinctChildrenDeepIdxG": (
             distinct_children_deep,
             (
-                "oGenPart",
+                "nGenPart",
                 "GenPart_genPartIdxMotherG",
                 "GenPart_pdgId",
             ),
@@ -302,10 +302,11 @@ class NanoAOD(BaseLayoutBuilder):
                 new_fields[name] = counts2nestedindex(arr_local_counts, arr_target)
 
         # TODO: make those kernels work with virtual arrays
-        # # Create any special arrays
-        # for name, (fcn, args) in self.special_items.items():
-        #     if all(k in fields for k in args):
-        #         new_fields[name] = fcn(*(_non_materializing_get_field(array, k) for k in args))
+        # Create any special arrays
+        for name, (fcn, args) in self.special_items.items():
+            breakpoint()
+            if all(k in fields for k in args):
+                new_fields[name] = fcn(*(_non_materializing_get_field(array, k) for k in args))
 
         output = {}
         for name in collections:
