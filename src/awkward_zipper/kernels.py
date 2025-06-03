@@ -1,6 +1,42 @@
+import functools
+
 import awkward
 import numba
 import numpy as np
+
+
+# function: tp.Callable[[],]
+def dispatch_wrap(function):
+    @functools.wraps(function)
+    def _wrapper(*input_arrays, data=None, dtype=np.int64):
+        """
+        Calls a function and passes it input_arrays as parameters. Returns a function result in eager case.
+         In virtual case returns a result from a function wrapped in a Virtual Array.
+        Args:
+            input_arrays: function parameters
+            data: additional parameter for VirtualArray creation
+            function: function to return
+            dtype: additional parameter for VirtualArray creation
+
+        Returns: function(input_arrays) or
+         awkward.VirtualArray(generator=lambda: function(input_arrays))
+
+        """
+        # Virtual array
+        if data is not None:
+            return awkward._nplikes.virtual.VirtualArray(
+                nplike=data._nplike,
+                shape=(awkward._nplikes.shape.unknown_length,),
+                dtype=dtype,
+                generator=lambda: function(
+                    *(awkward.materialize(array) for array in input_arrays)
+                ),
+                shape_generator=None,
+            )
+        # concrete array
+        return function(*input_arrays)
+
+    return _wrapper
 
 
 def local2globalindex(index, counts):
@@ -20,7 +56,8 @@ def local2globalindex(index, counts):
     (here 21=8+7+4+2)
     """
 
-    def _local2globalindex(index, counts, virtual=False):
+    @dispatch_wrap
+    def _local2globalindex(index, counts):
         offsets = counts2offsets(counts)
         index = index.mask[index >= 0] + offsets[:-1]
         index = index.mask[index < offsets[1:]]  # guard against out of bounds
@@ -28,39 +65,29 @@ def local2globalindex(index, counts):
         # index.type is N * var * int32?
         index = awkward.fill_none(index, -1)
         # use ensure array from coffea?
-        if virtual:
-            return awkward.flatten(index)
-        return index
+        return awkward.flatten(index)
 
-    # VirtualArray
-    if (not index.layout.is_all_materialized) or (
-        not counts.layout.is_all_materialized
-    ):
+    # Check if VirtualArray
+    index_data = None
+    if not all(awkward.to_layout(_).is_all_materialized for _ in (index, counts)):
         index_data = index.layout.content.data
-        # resulting global index will have the same offsets as local index
-        index_offsets = index.layout.offsets
-        index_content = awkward._nplikes.virtual.VirtualArray(
-            nplike=index_data._nplike,
-            shape=(awkward._nplikes.shape.unknown_length,),
-            dtype=np.int64,
-            generator=lambda: _local2globalindex(
-                awkward.materialize(index), awkward.materialize(counts), virtual=True
-            ),
-            shape_generator=lambda: index_data.shape,
+
+    # resulting global index will have the same offsets as local index
+    index_offsets = index.layout.offsets
+
+    index_content = _local2globalindex(index, counts, data=index_data)
+    # index_content shape would be index_data.shape
+    index_content = awkward.contents.numpyarray.NumpyArray(index_content)
+    # create new parameters for the final array
+    parameters = awkward.parameters(index)
+    parameters["__doc__"] = "global " + parameters["__doc__"]
+    return awkward.Array(
+        awkward.contents.ListOffsetArray(
+            offsets=index_offsets,
+            content=index_content,
+            parameters=parameters,
         )
-        index_content = awkward.contents.numpyarray.NumpyArray(index_content)
-        # create new parameters for the final array
-        parameters = awkward.parameters(index)
-        parameters["__doc__"] = "global " + parameters["__doc__"]
-        return awkward.Array(
-            awkward.contents.ListOffsetArray(
-                offsets=index_offsets,
-                content=index_content,
-                parameters=parameters,
-            )
-        )
-    # concrete array
-    return _local2globalindex(index, counts)
+    )
 
 
 def nestedindex(indices):
@@ -80,59 +107,26 @@ def nestedindex(indices):
      [[8, -1], [6, 7]]]
     """
 
-    def _nestedindex(indices):
-        # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
-
-        # store offsets to later reapply them to the arrays
-        offsets_stored = indices[0].layout.offsets
-        # also store parameters
-        parameters = {}
-        for i, idx in enumerate(indices):
-            if "__doc__" in parameters:
-                parameters["__doc__"] += " and "
-            else:
-                parameters["__doc__"] = "nested from "
-            parameters["__doc__"] += awkward.parameters(idx)["__doc__"]
-            # flatten the index
-            indices[i] = awkward.Array(idx.layout.content)
-
-        n = len(indices)
-        out = np.empty(n * len(indices[0]), dtype="int64")
-        for i, idx in enumerate(indices):
-            #  index arrays should all be same shape flat arrays
-            out[i::n] = idx
-
-        offsets = np.arange(0, len(out) + 1, n, dtype=np.int64)
-        out = awkward.Array(
-            awkward.contents.ListOffsetArray(
-                awkward.index.Index64(offsets),
-                awkward.contents.NumpyArray(out),
-            )
-        )
-        # reapply the offsets
-        return awkward.Array(
-            awkward.contents.ListOffsetArray(
-                offsets_stored,
-                out.layout,
-                parameters=parameters,
-            )
-        )
-
+    @dispatch_wrap
     def _nestedindex_content(indices):
         # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
-        for i, idx in enumerate(indices):
+        flat_indices = []
+        for idx in indices:
             # flatten the index
-            indices[i] = awkward.Array(idx.layout.content)
+            flat_indices.append(awkward.Array(idx.layout.content))
 
-        n = len(indices)
-        out = np.empty(n * len(indices[0]), dtype="int64")
-        for i, idx in enumerate(indices):
+        n = len(flat_indices)
+        out = np.empty(n * len(flat_indices[0]), dtype="int64")
+        for i, idx in enumerate(flat_indices):
             #  index arrays should all be same shape flat arrays
             out[i::n] = idx
 
+        del flat_indices
         return out
 
-    def _get_nested_index_offsets(nested_index_content, n):
+    @dispatch_wrap
+    def _get_nested_index_offsets(nested_index_content, indices):
+        n = len(indices)
         return np.arange(0, len(nested_index_content) + 1, n, dtype=np.int64)
 
     def _combine_parameters(indices):
@@ -154,47 +148,36 @@ def nestedindex(indices):
     ):
         raise RuntimeError
 
-    # VirtualArray
-    if not all(awkward.to_layout(index).is_all_materialized for index in indices):
+    # Check if VirtualArray
+    index_data = None
+    if not all(awkward.to_layout(_).is_all_materialized for _ in indices):
         index_data = indices[0].layout.content.data
-        # store offsets to later reapply them to the arrays
-        offsets_stored = indices[0].layout.offsets
-        nested_index_content = awkward._nplikes.virtual.VirtualArray(
-            nplike=index_data._nplike,
-            shape=(awkward._nplikes.shape.unknown_length,),
-            dtype=np.int64,
-            generator=lambda: _nestedindex_content(
-                [awkward.materialize(idx) for idx in indices]
-            ),
-            shape_generator=None,
-        )
-        nested_index_offsets = awkward._nplikes.virtual.VirtualArray(
-            nplike=index_data._nplike,
-            shape=(awkward._nplikes.shape.unknown_length,),
-            dtype=np.int64,
-            generator=lambda: _get_nested_index_offsets(
-                awkward.materialize(nested_index_content), len(indices)
-            ),
-            shape_generator=None,
-        )
-        # combine offsets and content
-        nested_index = awkward.contents.ListOffsetArray(
-            awkward.index.Index64(nested_index_offsets),
-            awkward.contents.NumpyArray(nested_index_content),
-        )
-        # combine the parameters
-        parameters = _combine_parameters(indices)
-        # reapply the offsets
-        return awkward.Array(
-            awkward.contents.ListOffsetArray(
-                offsets_stored,
-                nested_index,
-                parameters=parameters,
-            )
-        )
 
-    # concrete array
-    return _nestedindex(indices)
+    # store offsets to later reapply them to the arrays
+    offsets_stored = indices[0].layout.offsets
+    nested_index_content = _nestedindex_content(
+        indices, data=index_data, dtype=np.int64
+    )
+
+    nested_index_offsets = _get_nested_index_offsets(
+        nested_index_content, indices, data=index_data, dtype=np.int64
+    )
+
+    # combine offsets and content
+    nested_index = awkward.contents.ListOffsetArray(
+        awkward.index.Index64(nested_index_offsets),
+        awkward.contents.NumpyArray(nested_index_content),
+    )
+    # combine the parameters
+    parameters = _combine_parameters(indices)
+    # reapply the offsets
+    return awkward.Array(
+        awkward.contents.ListOffsetArray(
+            offsets_stored,
+            nested_index,
+            parameters=parameters,
+        )
+    )
 
 
 def counts2nestedindex(local_counts, target_offsets):
@@ -212,24 +195,13 @@ def counts2nestedindex(local_counts, target_offsets):
      [[9, 10, 11, 12], [13, 14]]]
     """
 
+    @dispatch_wrap
     def _arange(array):
         return np.arange(array[-1], dtype=np.int64)
 
+    @dispatch_wrap
     def _flatten(array):
         return awkward.flatten(array)
-
-    def _process_array(array, data, function, dtype=np.int64):
-        # Virtual array
-        if data is not None:
-            return awkward._nplikes.virtual.VirtualArray(
-                nplike=data._nplike,
-                shape=(awkward._nplikes.shape.unknown_length,),
-                dtype=dtype,
-                generator=lambda: function(array),
-                shape_generator=None,
-            )
-        # concrete array
-        return function(array)
 
     if not isinstance(
         local_counts.layout, awkward.contents.listoffsetarray.ListOffsetArray
@@ -252,9 +224,9 @@ def counts2nestedindex(local_counts, target_offsets):
         local_counts_data = local_counts.layout.content.data
         local_counts_data_dtype = local_counts_data.dtype
 
-    nested_index_content = _process_array(offsets, local_counts_data, _arange)
-    flat_counts = _process_array(
-        local_counts, local_counts_data, _flatten, dtype=local_counts_data_dtype
+    nested_index_content = _arange(offsets, data=local_counts_data)
+    flat_counts = _flatten(
+        local_counts, data=local_counts_data, dtype=local_counts_data_dtype
     )
 
     nested_index_offsets = counts2offsets(flat_counts)
@@ -273,6 +245,7 @@ def counts2nestedindex(local_counts, target_offsets):
     )
 
 
+# TODO: add dispatch_wrapper decorator for this function too
 def counts2offsets(counts):
     # Cumulative sum of counts
     def _counts2offsets(counts):
@@ -289,10 +262,11 @@ def counts2offsets(counts):
         and not counts.is_materialized
     ):
         virtual_array = counts
-    elif not counts.layout.is_all_materialized:
+    elif isinstance(counts, awkward.Array) and not counts.layout.is_all_materialized:
         virtual_array = counts.layout.data
     else:
         virtual_array = None
+
     if virtual_array is not None:
         return awkward._nplikes.virtual.VirtualArray(
             nplike=virtual_array._nplike,
