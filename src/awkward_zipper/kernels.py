@@ -69,9 +69,7 @@ def local2globalindex(index, counts):
 
     # Check if VirtualArray
     index_data = None
-    if (not index.layout.is_all_materialized) or (
-        not counts.layout.is_all_materialized
-    ):
+    if not all(awkward.to_layout(_).is_all_materialized for _ in (index, counts)):
         index_data = index.layout.content.data
 
     # resulting global index will have the same offsets as local index
@@ -113,7 +111,7 @@ def nestedindex(indices):
     def _nestedindex_content(indices):
         # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
         flat_indices = []
-        for i, idx in enumerate(indices):
+        for idx in indices:
             # flatten the index
             flat_indices.append(awkward.Array(idx.layout.content))
 
@@ -152,7 +150,7 @@ def nestedindex(indices):
 
     # Check if VirtualArray
     index_data = None
-    if not all(awkward.to_layout(index).is_all_materialized for index in indices):
+    if not all(awkward.to_layout(_).is_all_materialized for _ in indices):
         index_data = indices[0].layout.content.data
 
     # store offsets to later reapply them to the arrays
