@@ -245,6 +245,7 @@ def counts2nestedindex(local_counts, target_offsets):
     )
 
 
+# TODO: add dispatch_wrapper decorator for this function too
 def counts2offsets(counts):
     # Cumulative sum of counts
     def _counts2offsets(counts):
@@ -261,10 +262,11 @@ def counts2offsets(counts):
         and not counts.is_materialized
     ):
         virtual_array = counts
-    elif not counts.layout.is_all_materialized:
+    elif isinstance(counts, awkward.Array) and not counts.layout.is_all_materialized:
         virtual_array = counts.layout.data
     else:
         virtual_array = None
+
     if virtual_array is not None:
         return awkward._nplikes.virtual.VirtualArray(
             nplike=virtual_array._nplike,
