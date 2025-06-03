@@ -1,34 +1,42 @@
+import functools
+
 import awkward
 import numba
 import numpy as np
 
 
-def _process_arrays(input_arrays, data, function, dtype=np.int64):
-    """
-    Calls a function and passes it input_arrays as parameters. Returns a function result in eager case.
-     In virtual case returns a result from a function wrapped in a Virtual Array.
-    Args:
-        input_arrays: function parameters
-        data: additional parameter for VirtualArray creation
-        function: function to return
-        dtype: additional parameter for VirtualArray creation
+# function: tp.Callable[[],]
+def dispatch_wrap(function):
+    @functools.wraps(function)
+    def _wrapper(*input_arrays, data=None, dtype=np.int64):
+        """
+        Calls a function and passes it input_arrays as parameters. Returns a function result in eager case.
+         In virtual case returns a result from a function wrapped in a Virtual Array.
+        Args:
+            input_arrays: function parameters
+            data: additional parameter for VirtualArray creation
+            function: function to return
+            dtype: additional parameter for VirtualArray creation
 
-    Returns:
+        Returns: function(input_arrays) or
+         awkward.VirtualArray(generator=lambda: function(input_arrays))
 
-    """
-    # Virtual array
-    if data is not None:
-        return awkward._nplikes.virtual.VirtualArray(
-            nplike=data._nplike,
-            shape=(awkward._nplikes.shape.unknown_length,),
-            dtype=dtype,
-            generator=lambda: function(
-                *(awkward.materialize(array) for array in input_arrays)
-            ),
-            shape_generator=None,
-        )
-    # concrete array
-    return function(*input_arrays)
+        """
+        # Virtual array
+        if data is not None:
+            return awkward._nplikes.virtual.VirtualArray(
+                nplike=data._nplike,
+                shape=(awkward._nplikes.shape.unknown_length,),
+                dtype=dtype,
+                generator=lambda: function(
+                    *(awkward.materialize(array) for array in input_arrays)
+                ),
+                shape_generator=None,
+            )
+        # concrete array
+        return function(*input_arrays)
+
+    return _wrapper
 
 
 def local2globalindex(index, counts):
@@ -48,6 +56,7 @@ def local2globalindex(index, counts):
     (here 21=8+7+4+2)
     """
 
+    @dispatch_wrap
     def _local2globalindex(index, counts):
         offsets = counts2offsets(counts)
         index = index.mask[index >= 0] + offsets[:-1]
@@ -68,7 +77,7 @@ def local2globalindex(index, counts):
     # resulting global index will have the same offsets as local index
     index_offsets = index.layout.offsets
 
-    index_content = _process_arrays((index, counts), index_data, _local2globalindex)
+    index_content = _local2globalindex(index, counts, data=index_data)
     # index_content shape would be index_data.shape
     index_content = awkward.contents.numpyarray.NumpyArray(index_content)
     # create new parameters for the final array
@@ -232,9 +241,11 @@ def counts2nestedindex(local_counts, target_offsets):
      [[9, 10, 11, 12], [13, 14]]]
     """
 
+    @dispatch_wrap
     def _arange(array):
         return np.arange(array[-1], dtype=np.int64)
 
+    @dispatch_wrap
     def _flatten(array):
         return awkward.flatten(array)
 
@@ -259,11 +270,9 @@ def counts2nestedindex(local_counts, target_offsets):
         local_counts_data = local_counts.layout.content.data
         local_counts_data_dtype = local_counts_data.dtype
 
-    nested_index_content = _process_arrays(
-        (offsets,), data=local_counts_data, function=_arange
-    )
-    flat_counts = _process_arrays(
-        (local_counts,), local_counts_data, _flatten, dtype=local_counts_data_dtype
+    nested_index_content = _arange(offsets, data=local_counts_data)
+    flat_counts = _flatten(
+        local_counts, data=local_counts_data, dtype=local_counts_data_dtype
     )
 
     nested_index_offsets = counts2offsets(flat_counts)
