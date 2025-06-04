@@ -337,6 +337,7 @@ def children(offsets, parents):
     )
 
 
+@dispatch_wrap
 @numba.njit
 def _distinct_parent_kernel(allpart_parent, allpart_pdg):
     out = np.empty(len(allpart_pdg), dtype=np.int64)
@@ -366,12 +367,23 @@ def distinct_parent(parents, pdg):
     if not isinstance(parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
         raise RuntimeError
 
+    # Check if VirtualArray
+    parents_data = None
+    if not all(awkward.to_layout(_).is_all_materialized for _ in (parents, pdg)):
+        parents_data = parents.layout.content.data
+
+    # store offsets to later reapply them
+    result_offsets = parents.layout.offsets
+    # calculate the contents
     result_content = _distinct_parent_kernel(
-        awkward.Array(parents.layout.content), awkward.Array(pdg.layout.content)
+        awkward.Array(parents.layout.content),
+        awkward.Array(pdg.layout.content),
+        data=parents_data,
     )
+
     return awkward.Array(
         awkward.contents.ListOffsetArray(
-            parents.layout.offsets,
+            result_offsets,
             awkward.contents.NumpyArray(result_content),
         )
     )
