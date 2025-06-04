@@ -355,13 +355,26 @@ def _distinct_parent_kernel(allpart_parent, allpart_pdg):
     return out
 
 
-def distinct_parent(pdg, parents):
+def distinct_parent(parents, pdg):
     """Compute first parent with distinct PDG id
 
     Signature: globalparents,globalpdgs,!distinctParent
     Expects global indexes, flat arrays, which should be same length
     """
-    return _distinct_parent_kernel(awkward.Array(parents), awkward.Array(pdg))
+    if not isinstance(pdg.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+        raise RuntimeError
+    if not isinstance(parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+        raise RuntimeError
+
+    result_content = _distinct_parent_kernel(
+        awkward.Array(parents.layout.content), awkward.Array(pdg.layout.content)
+    )
+    return awkward.Array(
+        awkward.contents.ListOffsetArray(
+            parents.layout.offsets,
+            awkward.contents.NumpyArray(result_content),
+        )
+    )
 
 
 @numba.njit
