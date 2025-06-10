@@ -5,6 +5,17 @@ import numba
 import numpy as np
 
 
+def ensure_array(arraylike):
+    """
+    Converts arraylike to a Numpy array
+    """
+    if isinstance(arraylike, (awkward.contents.Content | awkward.Array)):
+        return awkward.to_numpy(arraylike)
+    if isinstance(arraylike, awkward.index.Index):
+        return arraylike.data
+    return np.asarray(arraylike)
+
+
 # function: tp.Callable[[],]
 def dispatch_wrap(function):
     @functools.wraps(function)
@@ -59,13 +70,16 @@ def local2globalindex(index, counts):
     @dispatch_wrap
     def _local2globalindex(index, counts):
         offsets = counts2offsets(counts)
+        # make sure that offsets is always a Numpy array
+        offsets = ensure_array(offsets)
         index = index.mask[index >= 0] + offsets[:-1]
         index = index.mask[index < offsets[1:]]  # guard against out of bounds
         # workaround ValueError: can not (unsafe) zip ListOffsetArrays with non-NumpyArray contents
         # index.type is N * var * int32?
         index = awkward.fill_none(index, -1)
-        # use ensure array from coffea?
-        return awkward.flatten(index)
+        output = awkward.flatten(index)
+        # make sure that output is always Numpy array
+        return ensure_array(output)
 
     # Check if VirtualArray
     index_data = None
@@ -121,7 +135,6 @@ def nestedindex(indices):
             #  index arrays should all be same shape flat arrays
             out[i::n] = idx
 
-        del flat_indices
         return out
 
     @dispatch_wrap
@@ -249,6 +262,8 @@ def counts2nestedindex(local_counts, target_offsets):
 def counts2offsets(counts):
     # Cumulative sum of counts
     def _counts2offsets(counts):
+        # make sure that input is always Numpy array
+        counts = ensure_array(counts)
         # awkward index default type is int64, so we use the same type for new arrays
         offsets = np.empty(len(counts) + 1, dtype=np.int64)
         offsets[0] = 0
