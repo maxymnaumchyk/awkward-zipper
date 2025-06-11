@@ -304,7 +304,7 @@ class NanoAOD(BaseLayoutBuilder):
         # TODO: make those kernels work with virtual arrays
         # Create any special arrays
         for name, (fcn, args) in self.special_items.items():
-            if not fcn == distinct_parent:
+            if fcn == distinct_children_deep:
                 # develop one function at a time
                 break
             if all((k in new_fields or k in fields) for k in args):
@@ -343,7 +343,10 @@ class NanoAOD(BaseLayoutBuilder):
                     arr = _non_materializing_get_field(new_fields, field)
                     parameters = arr.layout.parameters
                     *_, buffers = awkward.to_buffers(arr)
-                    if field in self.nested_items | self.nested_index_items:
+                    if field in self.nested_items | self.nested_index_items | dict(
+                        list(self.special_items.items())[1:]
+                    ):
+                        print(field)
                         # doubly-jagged case
                         assert {"node0-offsets", "node1-offsets", "node2-data"} == set(
                             buffers

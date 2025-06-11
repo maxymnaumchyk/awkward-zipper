@@ -294,7 +294,7 @@ def counts2offsets(counts):
     return _counts2offsets(counts.layout.data)
 
 
-@numba.njit
+# numba.njit
 def _children_kernel(offsets_in, parentidx):
     offsets1_out = np.empty(len(parentidx) + 1, dtype=np.int64)
     content1_out = np.empty(len(parentidx), dtype=np.int64)
@@ -322,17 +322,34 @@ def _children_kernel(offsets_in, parentidx):
     return offsets1_out, content1_out[:offset1]
 
 
-def children(offsets, parents):
+def children(counts, globalparents):
     """Compute children
 
     Signature: offsets,globalparents,!children
     Output will be a jagged array with same outer shape as globalparents content
     """
-    coffsets, ccontent = _children_kernel(offsets, parents)
+    if not isinstance(
+        globalparents.layout, awkward.contents.listoffsetarray.ListOffsetArray
+    ):
+        raise RuntimeError
+    offsets = counts2offsets(counts)
+
+
+    # store offsets to later reapply them
+    result_offsets = globalparents.layout.offsets
+
+    coffsets, ccontent = _children_kernel(offsets, globalparents.layout.content.data)
+
+    out = awkward.contents.ListOffsetArray(
+        awkward.index.Index64(coffsets),
+        awkward.contents.NumpyArray(ccontent),
+    )
+
+    # reapply the offsets
     return awkward.Array(
         awkward.contents.ListOffsetArray(
-            awkward.index.Index64(coffsets),
-            awkward.contents.NumpyArray(ccontent),
+            result_offsets,
+            out,
         )
     )
 
