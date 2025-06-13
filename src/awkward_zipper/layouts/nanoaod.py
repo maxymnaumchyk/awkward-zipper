@@ -346,7 +346,6 @@ class NanoAOD(BaseLayoutBuilder):
                     if field in self.nested_items | self.nested_index_items | dict(
                         list(self.special_items.items())[1:]
                     ):
-                        print(field)
                         # doubly-jagged case
                         assert {"node0-offsets", "node1-offsets", "node2-data"} == set(
                             buffers

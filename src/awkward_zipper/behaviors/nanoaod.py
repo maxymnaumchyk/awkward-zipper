@@ -100,18 +100,21 @@ class GenParticle(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
             mask |= 1 << self.FLAGS.index(flag)
         return (self.statusFlags & mask) == mask
 
+    @property
     def parent(self):
         """
         Accessor to the direct parent of this particle.
         """
         return self._events().GenPart._apply_global_index(self.genPartIdxMotherG)
 
+    @property
     def distinctParent(self):
         """
         Accessor to distinct (different PDG id) parent particle.
         """
         return self._events().GenPart._apply_global_index(self.distinctParentIdxG)
 
+    @property
     def children(self):
         """
         Accessor to direct children of this particle (not grandchildren). Includes particles
@@ -119,6 +122,7 @@ class GenParticle(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
         """
         return self._events().GenPart._apply_global_index(self.childrenIdxG)
 
+    @property
     def distinctChildren(self):
         """
         Accessor to direct children of this particle which do not have the same PDG ID as
@@ -128,6 +132,7 @@ class GenParticle(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
         """
         return self._events().GenPart._apply_global_index(self.distinctChildrenIdxG)
 
+    @property
     def distinctChildrenDeep(self):
         """
         Accessor to distinct child particles with different PDG id, or last ones in the chain.
@@ -158,6 +163,7 @@ behavior.update(
 class GenVisTau(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     """NanoAOD visible tau object"""
 
+    @property
     def parent(self):
         """Accessor to the parent particle"""
         return self._events().GenPart._apply_global_index(self.genPartIdxMotherG)

@@ -294,10 +294,32 @@ def counts2offsets(counts):
     return _counts2offsets(counts.layout.data)
 
 
-# numba.njit
-def _children_kernel(offsets_in, parentidx):
-    offsets1_out = np.empty(len(parentidx) + 1, dtype=np.int64)
+@dispatch_wrap
+@numba.njit
+def _children_kernel_content(offsets_in, parentidx):
     content1_out = np.empty(len(parentidx), dtype=np.int64)
+
+    offset1 = 0
+    for record_index in range(len(offsets_in) - 1):
+        start_src, stop_src = offsets_in[record_index], offsets_in[record_index + 1]
+
+        for index in range(start_src, stop_src):
+            for possible_child in range(index, stop_src):
+                if parentidx[possible_child] == index:
+                    if offset1 >= len(content1_out):
+                        msg = "offset1 went out of bounds!"
+                        raise RuntimeError(msg)
+                    content1_out[offset1] = possible_child
+                    offset1 = offset1 + 1
+
+    return content1_out[:offset1]
+
+
+@dispatch_wrap
+@numba.njit
+def _children_kernel_offsets(offsets_in, parentidx, content1_out):
+    offsets1_out = np.empty(len(parentidx) + 1, dtype=np.int64)
+    # content1_out = np.empty(len(parentidx), dtype=np.int64)
     offsets1_out[0] = 0
 
     offset0 = 1
@@ -311,7 +333,7 @@ def _children_kernel(offsets_in, parentidx):
                     if offset1 >= len(content1_out):
                         msg = "offset1 went out of bounds!"
                         raise RuntimeError(msg)
-                    content1_out[offset1] = possible_child
+                    # content1_out[offset1] = possible_child
                     offset1 = offset1 + 1
             if offset0 >= len(offsets1_out):
                 msg = "offset0 went out of bounds!"
@@ -319,7 +341,7 @@ def _children_kernel(offsets_in, parentidx):
             offsets1_out[offset0] = offset1
             offset0 = offset0 + 1
 
-    return offsets1_out, content1_out[:offset1]
+    return offsets1_out
 
 
 def children(counts, globalparents):
@@ -334,11 +356,26 @@ def children(counts, globalparents):
         raise RuntimeError
     offsets = counts2offsets(counts)
 
-
+    # Check if VirtualArray
+    globalparents_data = None
+    if not all(
+        awkward.to_layout(_).is_all_materialized for _ in (counts, globalparents)
+    ):
+        globalparents_data = globalparents.layout.content.data
     # store offsets to later reapply them
     result_offsets = globalparents.layout.offsets
-
-    coffsets, ccontent = _children_kernel(offsets, globalparents.layout.content.data)
+    # Numba can't accept Virtual arrays directly, so wrap them with awkward
+    ccontent = _children_kernel_content(
+        awkward.Array(awkward.contents.NumpyArray(offsets)),
+        awkward.Array(globalparents.layout.content),
+        data=globalparents_data,
+    )
+    coffsets = _children_kernel_offsets(
+        awkward.Array(awkward.contents.NumpyArray(offsets)),
+        awkward.Array(globalparents.layout.content),
+        awkward.Array(awkward.contents.NumpyArray(ccontent)),
+        data=globalparents_data,
+    )
 
     out = awkward.contents.ListOffsetArray(
         awkward.index.Index64(coffsets),
