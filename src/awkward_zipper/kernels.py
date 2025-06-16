@@ -370,16 +370,17 @@ def children(counts, globalparents):
         awkward.Array(globalparents.layout.content),
         data=globalparents_data,
     )
+    ccontent = awkward.contents.NumpyArray(ccontent)
     coffsets = _children_kernel_offsets(
         awkward.Array(awkward.contents.NumpyArray(offsets)),
         awkward.Array(globalparents.layout.content),
-        awkward.Array(awkward.contents.NumpyArray(ccontent)),
+        awkward.Array(ccontent),
         data=globalparents_data,
     )
 
     out = awkward.contents.ListOffsetArray(
         awkward.index.Index64(coffsets),
-        awkward.contents.NumpyArray(ccontent),
+        ccontent,
     )
 
     # reapply the offsets
@@ -526,20 +527,36 @@ def _distinct_children_deep_kernel(offsets_in, global_parents, global_pdgs):
     return offsets_out, content_out[:offset1]
 
 
-def distinct_children_deep(global_pdgs, global_parents, offsets):
+def distinct_children_deep(counts, global_parents, global_pdgs):
     """Compute all distinct children, skipping children with same pdg id in between.
 
     Signature: offsets,global_parents,global_pdgs,!distinctChildrenDeep
     Expects global indexes, flat arrays, which should be same length
     """
+    if not isinstance(global_parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+        raise RuntimeError
+    if not isinstance(global_pdgs.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+        raise RuntimeError
+    offsets = counts2offsets(counts)
+
+    # store offsets to later reapply them
+    result_offsets = global_parents.layout.offsets
     coffsets, ccontent = _distinct_children_deep_kernel(
         offsets,
-        global_parents,
-        awkward.Array(global_pdgs),
+        awkward.Array(global_parents.layout.content),
+        awkward.Array(global_pdgs.layout.content),
     )
+    ccontent = awkward.contents.NumpyArray(ccontent)
+
+    out = awkward.contents.ListOffsetArray(
+        awkward.index.Index64(coffsets),
+        ccontent,
+    )
+
+    # reapply the offsets
     return awkward.Array(
         awkward.contents.ListOffsetArray(
-            awkward.index.Index64(coffsets),
-            awkward.contents.NumpyArray(ccontent),
+            result_offsets,
+            out,
         )
     )
