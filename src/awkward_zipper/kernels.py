@@ -296,6 +296,58 @@ def counts2offsets(counts):
 
 @dispatch_wrap
 @numba.njit
+def _distinct_parent_kernel(allpart_parent, allpart_pdg):
+    out = np.empty(len(allpart_pdg), dtype=np.int64)
+    for i in range(len(allpart_pdg)):
+        parent = allpart_parent[i]
+        if parent < 0:
+            out[i] = -1
+            continue
+        thispdg = allpart_pdg[i]
+        while parent >= 0 and allpart_pdg[parent] == thispdg:
+            if parent >= len(allpart_pdg):
+                msg = "parent index beyond length of array!"
+                raise RuntimeError(msg)
+            parent = allpart_parent[parent]
+        out[i] = parent
+    return out
+
+
+def distinct_parent(parents, pdg):
+    """Compute first parent with distinct PDG id
+
+    Signature: globalparents,globalpdgs,!distinctParent
+    Expects global indexes, flat arrays, which should be same length
+    """
+    if not isinstance(pdg.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+        raise RuntimeError
+    if not isinstance(parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+        raise RuntimeError
+
+    # Check if VirtualArray
+    parents_data = None
+    if not all(awkward.to_layout(_).is_all_materialized for _ in (parents, pdg)):
+        parents_data = parents.layout.content.data
+
+    # store offsets to later reapply them
+    result_offsets = parents.layout.offsets
+    # calculate the contents
+    result_content = _distinct_parent_kernel(
+        awkward.Array(parents.layout.content),
+        awkward.Array(pdg.layout.content),
+        data=parents_data,
+    )
+
+    return awkward.Array(
+        awkward.contents.ListOffsetArray(
+            result_offsets,
+            awkward.contents.NumpyArray(result_content),
+        )
+    )
+
+
+@dispatch_wrap
+@numba.njit
 def _children_kernel_content(offsets_in, parentidx):
     content1_out = np.empty(len(parentidx), dtype=np.int64)
 
@@ -392,58 +444,6 @@ def children(counts, globalparents):
     )
 
 
-@dispatch_wrap
-@numba.njit
-def _distinct_parent_kernel(allpart_parent, allpart_pdg):
-    out = np.empty(len(allpart_pdg), dtype=np.int64)
-    for i in range(len(allpart_pdg)):
-        parent = allpart_parent[i]
-        if parent < 0:
-            out[i] = -1
-            continue
-        thispdg = allpart_pdg[i]
-        while parent >= 0 and allpart_pdg[parent] == thispdg:
-            if parent >= len(allpart_pdg):
-                msg = "parent index beyond length of array!"
-                raise RuntimeError(msg)
-            parent = allpart_parent[parent]
-        out[i] = parent
-    return out
-
-
-def distinct_parent(parents, pdg):
-    """Compute first parent with distinct PDG id
-
-    Signature: globalparents,globalpdgs,!distinctParent
-    Expects global indexes, flat arrays, which should be same length
-    """
-    if not isinstance(pdg.layout, awkward.contents.listoffsetarray.ListOffsetArray):
-        raise RuntimeError
-    if not isinstance(parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
-        raise RuntimeError
-
-    # Check if VirtualArray
-    parents_data = None
-    if not all(awkward.to_layout(_).is_all_materialized for _ in (parents, pdg)):
-        parents_data = parents.layout.content.data
-
-    # store offsets to later reapply them
-    result_offsets = parents.layout.offsets
-    # calculate the contents
-    result_content = _distinct_parent_kernel(
-        awkward.Array(parents.layout.content),
-        awkward.Array(pdg.layout.content),
-        data=parents_data,
-    )
-
-    return awkward.Array(
-        awkward.contents.ListOffsetArray(
-            result_offsets,
-            awkward.contents.NumpyArray(result_content),
-        )
-    )
-
-
 @numba.njit
 def _distinct_children_deep_kernel(offsets_in, global_parents, global_pdgs):
     offsets_out = np.empty(len(global_parents) + 1, dtype=np.int64)
@@ -533,9 +533,13 @@ def distinct_children_deep(counts, global_parents, global_pdgs):
     Signature: offsets,global_parents,global_pdgs,!distinctChildrenDeep
     Expects global indexes, flat arrays, which should be same length
     """
-    if not isinstance(global_parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+    if not isinstance(
+        global_parents.layout, awkward.contents.listoffsetarray.ListOffsetArray
+    ):
         raise RuntimeError
-    if not isinstance(global_pdgs.layout, awkward.contents.listoffsetarray.ListOffsetArray):
+    if not isinstance(
+        global_pdgs.layout, awkward.contents.listoffsetarray.ListOffsetArray
+    ):
         raise RuntimeError
     offsets = counts2offsets(counts)
 
