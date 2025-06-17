@@ -444,13 +444,14 @@ def children(counts, globalparents):
     )
 
 
+@dispatch_wrap
 @numba.njit
-def _distinct_children_deep_kernel(offsets_in, global_parents, global_pdgs):
-    offsets_out = np.empty(len(global_parents) + 1, dtype=np.int64)
+def _distinct_children_deep_kernel_content(offsets_in, global_parents, global_pdgs):
+    # offsets_out = np.empty(len(global_parents) + 1, dtype=np.int64)
     content_out = np.empty(len(global_parents), dtype=np.int64)
-    offsets_out[0] = 0
+    # offsets_out[0] = 0
 
-    offset0 = 1
+    # offset0 = 1
     offset1 = 0
     for record_index in range(len(offsets_in) - 1):
         start_src, stop_src = offsets_in[record_index], offsets_in[record_index + 1]
@@ -517,6 +518,82 @@ def _distinct_children_deep_kernel(offsets_in, global_parents, global_pdgs):
 
                         offset1 = offset1 + 1
 
+    return content_out[:offset1]
+
+
+@dispatch_wrap
+@numba.njit
+def _distinct_children_deep_kernel_offsets(
+    offsets_in, global_parents, global_pdgs, content_out
+):
+    offsets_out = np.empty(len(global_parents) + 1, dtype=np.int64)
+    offsets_out[0] = 0
+
+    offset0 = 1
+    offset1 = 0
+    for record_index in range(len(offsets_in) - 1):
+        start_src, stop_src = offsets_in[record_index], offsets_in[record_index + 1]
+
+        for index in range(start_src, stop_src):
+            this_pdg = global_pdgs[index]
+
+            # only perform the deep lookup when this particle is not already part of a decay chain
+            # otherwise, the same child indices would be repeated for every parent in the chain
+            # which would require content_out to have a length that isa-priori unknown
+            if (
+                global_parents[index] >= 0
+                and this_pdg != global_pdgs[global_parents[index]]
+            ):
+                # keep an index of parents with same pdg id
+                parents = np.empty(stop_src - index, dtype=np.int64)
+                parents[0] = index
+                offset2 = 1
+
+                # keep an additional index with parents that have at least one child
+                parents_with_children = np.empty(stop_src - index, dtype=np.int64)
+                offset3 = 0
+
+                for possible_child in range(index, stop_src):
+                    possible_parent = global_parents[possible_child]
+                    possibe_child_pdg = global_pdgs[possible_child]
+
+                    # compare with seen parents
+                    for parent_index in range(offset2):
+                        # check if we found a new child
+                        if parents[parent_index] == possible_parent:
+                            # first, remember that the parent has at least one child
+                            if offset3 >= len(parents_with_children):
+                                msg = "offset3 went out of bounds!"
+                                raise RuntimeError(msg)
+                            parents_with_children[offset3] = possible_parent
+                            offset3 = offset3 + 1
+
+                            # then, depending on the pdg id, add to parents or content
+                            if possibe_child_pdg == this_pdg:
+                                # has the same pdg id, add to parents
+                                if offset2 >= len(parents):
+                                    msg = "offset2 went out of bounds!"
+                                    raise RuntimeError(msg)
+                                parents[offset2] = possible_child
+                                offset2 = offset2 + 1
+                            else:
+                                # has a different pdg id, add to content
+                                if offset1 >= len(content_out):
+                                    msg = "offset1 went out of bounds!"
+                                    raise RuntimeError(msg)
+                                offset1 = offset1 + 1
+                            break
+
+                # add parents with same pdg id that have no children
+                for parent_index in range(1, offset2):
+                    possible_child = parents[parent_index]
+                    if possible_child not in parents_with_children[:offset3]:
+                        if offset1 >= len(content_out):
+                            msg = "offset1 went out of bounds! pt2"
+                            raise RuntimeError(msg)
+
+                        offset1 = offset1 + 1
+
             # finish this item by adding an offset
             if offset0 >= len(offsets_out):
                 msg = "offset0 went out of bounds!"
@@ -524,7 +601,7 @@ def _distinct_children_deep_kernel(offsets_in, global_parents, global_pdgs):
             offsets_out[offset0] = offset1
             offset0 = offset0 + 1
 
-    return offsets_out, content_out[:offset1]
+    return offsets_out
 
 
 def distinct_children_deep(counts, global_parents, global_pdgs):
@@ -543,14 +620,30 @@ def distinct_children_deep(counts, global_parents, global_pdgs):
         raise RuntimeError
     offsets = counts2offsets(counts)
 
+    # Check if VirtualArray
+    global_parents_data = None
+    if not all(
+        awkward.to_layout(_).is_all_materialized
+        for _ in (counts, global_parents, global_pdgs)
+    ):
+        global_parents_data = global_parents.layout.content.data
+
     # store offsets to later reapply them
     result_offsets = global_parents.layout.offsets
-    coffsets, ccontent = _distinct_children_deep_kernel(
-        offsets,
+    ccontent = _distinct_children_deep_kernel_content(
+        awkward.Array(awkward.contents.NumpyArray(offsets)),
         awkward.Array(global_parents.layout.content),
         awkward.Array(global_pdgs.layout.content),
+        data=global_parents_data,
     )
     ccontent = awkward.contents.NumpyArray(ccontent)
+    coffsets = _distinct_children_deep_kernel_offsets(
+        awkward.Array(awkward.contents.NumpyArray(offsets)),
+        awkward.Array(global_parents.layout.content),
+        awkward.Array(global_pdgs.layout.content),
+        awkward.Array(ccontent),
+        data=global_parents_data,
+    )
 
     out = awkward.contents.ListOffsetArray(
         awkward.index.Index64(coffsets),

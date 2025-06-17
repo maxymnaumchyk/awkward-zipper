@@ -301,7 +301,6 @@ class NanoAOD(BaseLayoutBuilder):
                 # this used to be transforms.counts2nestedindex_form + transforms.local2global_form in coffea
                 new_fields[name] = counts2nestedindex(arr_local_counts, arr_target)
 
-        # TODO: make those kernels work with virtual arrays
         # Create any special arrays
         for name, (fcn, args) in self.special_items.items():
             if all((k in new_fields or k in fields) for k in args):
