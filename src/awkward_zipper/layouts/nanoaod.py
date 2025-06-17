@@ -150,21 +150,21 @@ class NanoAOD(BaseLayoutBuilder):
         "GenPart_childrenIdxG": (
             children,
             (
-                "oGenPart",
+                "nGenPart",
                 "GenPart_genPartIdxMotherG",
             ),
         ),
         "GenPart_distinctChildrenIdxG": (
             children,
             (
-                "oGenPart",
+                "nGenPart",
                 "GenPart_distinctParentIdxG",
             ),
         ),
         "GenPart_distinctChildrenDeepIdxG": (
             distinct_children_deep,
             (
-                "oGenPart",
+                "nGenPart",
                 "GenPart_genPartIdxMotherG",
                 "GenPart_pdgId",
             ),
@@ -301,11 +301,18 @@ class NanoAOD(BaseLayoutBuilder):
                 # this used to be transforms.counts2nestedindex_form + transforms.local2global_form in coffea
                 new_fields[name] = counts2nestedindex(arr_local_counts, arr_target)
 
-        # TODO: make those kernels work with virtual arrays
-        # # Create any special arrays
-        # for name, (fcn, args) in self.special_items.items():
-        #     if all(k in fields for k in args):
-        #         new_fields[name] = fcn(*(_non_materializing_get_field(array, k) for k in args))
+        # Create any special arrays
+        for name, (fcn, args) in self.special_items.items():
+            if all((k in new_fields or k in fields) for k in args):
+                # shortened code: (_non_materializing_get_field(new_fields if k in new_fields else array, k) for k in args)
+                input_arrays = ()
+                for k in args:
+                    input_arrays += (
+                        _non_materializing_get_field(
+                            new_fields if k in new_fields else array, k
+                        ),
+                    )
+                new_fields[name] = fcn(*input_arrays)
 
         output = {}
         for name in collections:
@@ -332,7 +339,9 @@ class NanoAOD(BaseLayoutBuilder):
                     arr = _non_materializing_get_field(new_fields, field)
                     parameters = arr.layout.parameters
                     *_, buffers = awkward.to_buffers(arr)
-                    if field in self.nested_items | self.nested_index_items:
+                    if field in self.nested_items | self.nested_index_items | dict(
+                        list(self.special_items.items())[1:]
+                    ):
                         # doubly-jagged case
                         assert {"node0-offsets", "node1-offsets", "node2-data"} == set(
                             buffers
