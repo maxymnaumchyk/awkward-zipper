@@ -41,7 +41,14 @@ def dispatch_wrap(function):
                 shape=(awkward._nplikes.shape.unknown_length,),
                 dtype=dtype,
                 generator=lambda: function(
-                    *((array if isinstance(array, int) else awkward.materialize(array)) for array in input_arrays)
+                    *(
+                        (
+                            array
+                            if isinstance(array, int)
+                            else awkward.materialize(array)
+                        )
+                        for array in input_arrays
+                    )
                 ),
                 shape_generator=None,
             )
