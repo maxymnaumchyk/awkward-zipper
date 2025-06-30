@@ -24,7 +24,8 @@ def dispatch_wrap(function):
         Calls a function and passes it input_arrays as parameters. Returns a function result in eager case.
          In virtual case returns a result from a function wrapped in a Virtual Array.
         Args:
-            input_arrays: function parameters
+            input_arrays: function parameters. Awkward arrays and integers are accepted.
+             This is a VirtualArray generator limitation.
             data: additional parameter for VirtualArray creation
             function: function to return
             dtype: additional parameter for VirtualArray creation
@@ -40,7 +41,14 @@ def dispatch_wrap(function):
                 shape=(awkward._nplikes.shape.unknown_length,),
                 dtype=dtype,
                 generator=lambda: function(
-                    *(awkward.materialize(array) for array in input_arrays)
+                    *(
+                        (
+                            array
+                            if isinstance(array, int)
+                            else awkward.materialize(array)
+                        )
+                        for array in input_arrays
+                    )
                 ),
                 shape_generator=None,
             )
@@ -122,7 +130,7 @@ def nestedindex(indices):
     """
 
     @dispatch_wrap
-    def _nestedindex_content(indices):
+    def _nestedindex_content(*indices):
         # return awkward.concatenate([idx[:, None] for idx in indexers], axis=1)
         flat_indices = []
         for idx in indices:
@@ -138,9 +146,8 @@ def nestedindex(indices):
         return out
 
     @dispatch_wrap
-    def _get_nested_index_offsets(nested_index_content, indices):
-        n = len(indices)
-        return np.arange(0, len(nested_index_content) + 1, n, dtype=np.int64)
+    def _get_nested_index_offsets(nested_index_content, n_indices):
+        return np.arange(0, len(nested_index_content) + 1, n_indices, dtype=np.int64)
 
     def _combine_parameters(indices):
         parameters = {}
@@ -169,17 +176,17 @@ def nestedindex(indices):
     # store offsets to later reapply them to the arrays
     offsets_stored = indices[0].layout.offsets
     nested_index_content = _nestedindex_content(
-        indices, data=index_data, dtype=np.int64
+        *indices, data=index_data, dtype=np.int64
     )
-
+    nested_index_content = awkward.contents.NumpyArray(nested_index_content)
     nested_index_offsets = _get_nested_index_offsets(
-        nested_index_content, indices, data=index_data, dtype=np.int64
+        nested_index_content, len(indices), data=index_data, dtype=np.int64
     )
 
     # combine offsets and content
     nested_index = awkward.contents.ListOffsetArray(
         awkward.index.Index64(nested_index_offsets),
-        awkward.contents.NumpyArray(nested_index_content),
+        nested_index_content,
     )
     # combine the parameters
     parameters = _combine_parameters(indices)
