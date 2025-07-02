@@ -440,6 +440,13 @@ class NanoAOD(BaseLayoutBuilder):
             _rewrap(nanoevents),
             name="NanoEvents",
         )
+        # add aditional parameters
+        nanoevents.layout.parameters.update(
+            {
+                "metadata": {"version": self._version},
+                "__doc__": 'Events',
+            }
+        )
 
         # add ref to itself in attrs
         nanoevents.attrs["@original_array"] = nanoevents
