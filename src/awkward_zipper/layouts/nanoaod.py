@@ -444,7 +444,7 @@ class NanoAOD(BaseLayoutBuilder):
         nanoevents.layout.parameters.update(
             {
                 "metadata": {"version": self._version},
-                "__doc__": 'Events',
+                "__doc__": "Events",
             }
         )
 
