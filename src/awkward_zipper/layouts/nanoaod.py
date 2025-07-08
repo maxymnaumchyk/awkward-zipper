@@ -389,8 +389,15 @@ class NanoAOD(BaseLayoutBuilder):
                 output[name] = awkward.contents.ListOffsetArray(
                     offsets=offsets, content=record
                 )
-            elif ("n" + name) in fields or name in fields:
-                # list singleton (can use branch's own offsets) or singleton
+            elif ("n" + name) in fields:
+                # list singleton (can use branch's own offsets)
+                arr = _non_materializing_get_field(array, name)
+                output[name] = awkward.to_layout(arr)
+                output[name].parameters.update(
+                    {"__array__": mixin, "collection_name": name}
+                )
+            elif name in fields:
+                # singleton
                 arr = _non_materializing_get_field(array, name)
                 output[name] = awkward.to_layout(arr)
             else:
@@ -444,7 +451,7 @@ class NanoAOD(BaseLayoutBuilder):
         nanoevents.layout.parameters.update(
             {
                 "metadata": {"version": self._version},
-                "__doc__": "Events",
+                **array.layout.parameters,
             }
         )
 
