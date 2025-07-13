@@ -232,6 +232,32 @@ class NanoAOD(BaseLayoutBuilder):
         # parse into high-level records (collections, list collections, and singletons)
         collections = {k.split("_", maxsplit=1)[0] for k in fields - counter_fields}
 
+        # handles collections with underscore in their names
+        def _special_collections(collections, fields):
+            additional_collections = []
+            collections_to_remove = set()
+            for name in collections:
+                # check collections that have only one instance in each event
+                if "n" + name not in fields:
+                    collection_counts = _get_collection_fields("n" + name + "_", fields)
+                    # if however, the fields of this collection have multiple instances in each event
+                    # then we use these fields as collections instead
+                    # Example: 'nProton_multiRP' and 'nProton_singleRP' fields are present but no 'nProton' field
+                    # Then we add new 'Proton_multiRP' and 'Proton_singleRP' collections and delete 'Proton' collection
+                    if len(collection_counts) > 0:
+                        additional_collections += [
+                            counts.removeprefix("n")
+                            for counts in collection_counts
+                            if counts.count("_") == 1
+                        ]
+                        collections_to_remove.add(name)
+
+            collections.update(additional_collections)
+            collections -= collections_to_remove
+            return collections
+
+        collections = _special_collections(collections, fields)
+
         # check if data or simulation
         is_data = "GenPart" not in collections
 
