@@ -11,7 +11,10 @@ file_name = "tests/samples/nano_dy.root"
 tree = uproot.open(file_name)["Events"]
 # TTree -> awkward.Array[awkward.Record[str, awkward.Array]]
 access_log_zipper = []
-array = tree.virtual_arrays(ak_add_doc={"__doc__": "title", "typename": "typename"}, access_log=access_log_zipper)
+array = tree.virtual_arrays(
+    ak_add_doc={"__doc__": "title", "typename": "typename"},
+    access_log=access_log_zipper,
+)
 
 # construct an awkward array using awkward-zipper
 restructure = NanoAOD(version="latest")

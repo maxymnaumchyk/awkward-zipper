@@ -4,6 +4,7 @@ from coffea.nanoevents import NanoAODSchema, NanoEventsFactory
 
 from awkward_zipper import NanoAOD
 
+
 def compare_parameters(coffea_arr, zipper_arr, field=None) -> bool:
     """
     Compares parameters. Doesn't take into account parameters that zipper constructs differently from coffea.
@@ -92,7 +93,7 @@ if __name__ == "__main__":
     events = NanoEventsFactory.from_root(
         {file_name: "Events"},
         schemaclass=NanoAODSchema,
-        mode='eager',
+        mode="eager",
     )
     coffea_array = events.events()
 
