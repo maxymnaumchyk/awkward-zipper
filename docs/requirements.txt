@@ -12,3 +12,4 @@ aiohttp
 Sphinx~=7.0
 sphinx-rtd-theme
 nbsphinx
+ghp-import
