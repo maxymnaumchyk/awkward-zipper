@@ -9,5 +9,5 @@ requests
 aiohttp
 
 # these are for documentation
-Sphinx
+Sphinx~=7.0
 sphinx-rtd-theme
