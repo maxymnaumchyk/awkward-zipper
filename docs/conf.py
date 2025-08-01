@@ -41,3 +41,6 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+# logo that shows on the top left of the documentation page
+html_logo = "img/logo_unfilled_with_black_text.png"
+html_favicon = "img/logo_unfilled_with_text.png"

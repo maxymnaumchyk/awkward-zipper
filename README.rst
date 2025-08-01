@@ -1,3 +1,8 @@
+.. image:: img/logo_unfilled_with_text.png
+    :align: center
+    :width: 500px
+    :alt: logo
+
 Awkward-Zipper
 ==============
 
