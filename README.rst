@@ -1,3 +1,5 @@
+.. this is a readme file that is rendered in the documentation html page.
+
 .. image:: img/logo_unfilled_with_text.png
     :align: center
     :width: 500px
