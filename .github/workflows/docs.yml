@@ -28,6 +28,7 @@ jobs:
       # pandoc is needed to load jupyter notebooks in html
       - name: Install pandoc
         uses: r-lib/actions/setup-pandoc@v2
+      # Graphviz is needed for drawing graphs in documentation
       - name: Setup Graphviz
         uses: ts-graphviz/setup-graphviz@v2
       - name: Build HTML
