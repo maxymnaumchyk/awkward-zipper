@@ -4,9 +4,11 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import sys
+import os
 
 # sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 # sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
+sys.path.insert(0, os.path.abspath('../src'))
 print(sys.path)
 print(sys.executable)
 
