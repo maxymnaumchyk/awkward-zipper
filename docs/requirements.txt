@@ -12,4 +12,5 @@ aiohttp
 Sphinx~=7.0
 sphinx_rtd_theme
 nbsphinx
+graphviz
 ghp-import

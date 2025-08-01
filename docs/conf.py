@@ -6,8 +6,7 @@
 import sys
 from pathlib import Path
 
-# sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
-# sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
+# add awkward-zipper package to sys.path, so it can be importable for Sphinx
 sys.path.insert(0, str(Path("../src").resolve()))
 sys.path.insert(0, str(Path("..").resolve()))
 # sys.path.insert(0, str(Path("../..").resolve()))
