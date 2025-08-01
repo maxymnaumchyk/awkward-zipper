@@ -1,0 +1,17 @@
+# these are separate requirements for building sphinx documentation
+ipython
+ruff
+pre_commit
+mypy
+# use a version of coffea where awkward-zipper was not a part of it
+coffea==2025.7.0
+uproot@git+https://github.com/scikit-hep/uproot5@pfackeldey/uproot_lazy
+requests
+aiohttp
+
+# these are for documentation
+Sphinx~=7.0
+sphinx_rtd_theme
+nbsphinx
+graphviz
+ghp-import
