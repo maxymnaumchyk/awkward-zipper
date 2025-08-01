@@ -11,4 +11,5 @@
    :caption: Documentation
 
    notebooks
+   benchmarks
    modules
