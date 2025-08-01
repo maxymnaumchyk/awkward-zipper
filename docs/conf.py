@@ -8,7 +8,8 @@ from pathlib import Path
 
 # sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 # sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
-sys.path.insert(0, Path("../src").resolve())
+print(Path(__file__).parent)
+sys.path.append(Path(Path(__file__).parent, "..").resolve())
 print(sys.path)
 print(sys.executable)
 
