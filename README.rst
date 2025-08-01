@@ -1,6 +1,6 @@
-.. image:: docs/img/logo_unfilled_with_text.png
+.. image:: img/logo_unfilled_with_text.png
     :align: center
-    :width: 250px
+    :width: 500px
     :alt: logo
 
 Awkward-Zipper
