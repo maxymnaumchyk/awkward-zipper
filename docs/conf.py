@@ -8,9 +8,9 @@ from pathlib import Path
 
 # sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 # sys.path.insert(0, os.path.abspath(os.path.join("..", "..")))
-sys.path.insert(0, Path("../src/awkward_zipper").resolve())
-sys.path.insert(0, Path("..").resolve())
-sys.path.insert(0, Path("../..").resolve())
+sys.path.insert(0, str(Path("../src").resolve()))
+sys.path.insert(0, str(Path("..").resolve()))
+# sys.path.insert(0, str(Path("../..").resolve()))
 print(sys.path)
 print(sys.executable)
 
