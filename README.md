@@ -1,3 +1,5 @@
+<img src="docs/img/logo_unfilled_with_text.png" alt="logo" width="500" align="center"/>
+
 # Awkward-Zipper
 
 Most of this code has been originally been written by the [coffea](https://github.com/scikit-hep/coffea/tree/master) developers.
