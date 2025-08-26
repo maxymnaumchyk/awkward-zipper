@@ -32,7 +32,7 @@ def _non_materializing_get_field(record, field):
 
 
 def _maybe_raw_generator(buffer):
-    if isinstance(buffer, awkward._nplikes.virtual.VirtualArray):
+    if isinstance(buffer, awkward._nplikes.virtual.VirtualNDArray):
         if hasattr(buffer._generator, "__awkward_raw_generator__"):
             # essentially we're forgetting all shape_generators here
             return buffer._generator.__awkward_raw_generator__
@@ -42,7 +42,7 @@ def _maybe_raw_generator(buffer):
 
 
 def _rewrap(array):
-    # here we rerun `ak.from_buffers` so that `ak.from_buffers` correctly recreates dynamically all VirtualArrays
+    # here we rerun `ak.from_buffers` so that `ak.from_buffers` correctly recreates dynamically all VirtualNDArrays
     # the current buffers may have 'wrong' generators on them. Not "wrong" in the sense that they would yield wrong
     # buffers, but rather they would load too much.
     form, length, buffers = awkward.to_buffers(array)

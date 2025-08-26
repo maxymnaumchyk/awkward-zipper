@@ -25,18 +25,18 @@ def dispatch_wrap(function):
          In virtual case returns a result from a function wrapped in a Virtual Array.
         Args:
             input_arrays: function parameters. Awkward arrays and integers are accepted.
-             This is a VirtualArray generator limitation.
-            data: additional parameter for VirtualArray creation
+             This is a VirtualNDArray generator limitation.
+            data: additional parameter for VirtualNDArray creation
             function: function to return
-            dtype: additional parameter for VirtualArray creation
+            dtype: additional parameter for VirtualNDArray creation
 
         Returns: function(input_arrays) or
-         awkward.VirtualArray(generator=lambda: function(input_arrays))
+         awkward.VirtualNDArray(generator=lambda: function(input_arrays))
 
         """
         # Virtual array
         if data is not None:
-            return awkward._nplikes.virtual.VirtualArray(
+            return awkward._nplikes.virtual.VirtualNDArray(
                 nplike=data._nplike,
                 shape=(awkward._nplikes.shape.unknown_length,),
                 dtype=dtype,
@@ -89,7 +89,7 @@ def local2globalindex(index, counts):
         # make sure that output is always Numpy array
         return ensure_array(output)
 
-    # Check if VirtualArray
+    # Check if VirtualNDArray
     index_data = None
     if not all(awkward.to_layout(_).is_all_materialized for _ in (index, counts)):
         index_data = index.layout.content.data
@@ -168,7 +168,7 @@ def nestedindex(indices):
     ):
         raise RuntimeError
 
-    # Check if VirtualArray
+    # Check if VirtualNDArray
     index_data = None
     if not all(awkward.to_layout(_).is_all_materialized for _ in indices):
         index_data = indices[0].layout.content.data
@@ -236,7 +236,7 @@ def counts2nestedindex(local_counts, target_offsets):
     # store offsets to later reapply them to the arrays
     offsets_stored = local_counts.layout.offsets
 
-    # Check if VirtualArray
+    # Check if VirtualNDArray
     local_counts_data = local_counts_data_dtype = None
     if not all(
         awkward.to_layout(_).is_all_materialized for _ in (local_counts, target_offsets)
@@ -277,10 +277,10 @@ def counts2offsets(counts):
         np.cumsum(counts, out=offsets[1:])
         return offsets
 
-    # VirtualArray
-    # if isinstance(counts.layout.data, awkward._nplikes.virtual.VirtualArray):
+    # VirtualNDArray
+    # if isinstance(counts.layout.data, awkward._nplikes.virtual.VirtualNDArray):
     if (
-        isinstance(counts, awkward._nplikes.virtual.VirtualArray)
+        isinstance(counts, awkward._nplikes.virtual.VirtualNDArray)
         and not counts.is_materialized
     ):
         virtual_array = counts
@@ -290,7 +290,7 @@ def counts2offsets(counts):
         virtual_array = None
 
     if virtual_array is not None:
-        return awkward._nplikes.virtual.VirtualArray(
+        return awkward._nplikes.virtual.VirtualNDArray(
             nplike=virtual_array._nplike,
             shape=(awkward._nplikes.shape.unknown_length,),
             dtype=np.int64,
@@ -331,7 +331,7 @@ def distinct_parent(parents, pdg):
     if not isinstance(parents.layout, awkward.contents.listoffsetarray.ListOffsetArray):
         raise RuntimeError
 
-    # Check if VirtualArray
+    # Check if VirtualNDArray
     parents_data = None
     if not all(awkward.to_layout(_).is_all_materialized for _ in (parents, pdg)):
         parents_data = parents.layout.content.data
@@ -415,7 +415,7 @@ def children(counts, globalparents):
         raise RuntimeError
     offsets = counts2offsets(counts)
 
-    # Check if VirtualArray
+    # Check if VirtualNDArray
     globalparents_data = None
     if not all(
         awkward.to_layout(_).is_all_materialized for _ in (counts, globalparents)
@@ -627,7 +627,7 @@ def distinct_children_deep(counts, global_parents, global_pdgs):
         raise RuntimeError
     offsets = counts2offsets(counts)
 
-    # Check if VirtualArray
+    # Check if VirtualNDArray
     global_parents_data = None
     if not all(
         awkward.to_layout(_).is_all_materialized
