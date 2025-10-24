@@ -11,7 +11,8 @@ file_name = "tests/samples/nano_dy.root"
 tree = uproot.open(file_name)["Events"]
 # TTree -> awkward.Array[awkward.Record[str, awkward.Array]]
 access_log_zipper = []
-array = tree.virtual_arrays(
+array = tree.arrays(
+    virtual=True,
     ak_add_doc={"__doc__": "title", "typename": "typename"},
     access_log=access_log_zipper,
 )
@@ -115,7 +116,10 @@ def test_behaviors():
 
     # don't take Systematics into account
     for behavior in diff.copy():
-        if any(string in behavior for string in ("Systematic", "UpDownSystematic")):
+        if any(
+            string in behavior
+            for string in ("Systematic", "UpDownSystematic", "UpDownMultiSystematic")
+        ):
             diff.remove(behavior)
 
     assert len(diff) == 0

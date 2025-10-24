@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 dependencies = [
-    "awkward@git+https://github.com/scikit-hep/awkward@main",
+    "awkward >=2.8.8",
     "vector",
     "numba",
 ]
@@ -40,7 +40,8 @@ dev = [
     "pre_commit",
     "mypy",
     # use a version of coffea where awkward-zipper was not a part of it
-    "coffea==2025.7.0",
+    "coffea",
+    # change to release as soon as the PR exists in a release
     "uproot@git+https://github.com/scikit-hep/uproot5@pfackeldey/uproot_lazy",
     "requests",
     "aiohttp",

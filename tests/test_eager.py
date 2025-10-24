@@ -102,7 +102,10 @@ def test_behaviors():
 
     # don't take Systematics into account
     for behavior in diff.copy():
-        if any(string in behavior for string in ("Systematic", "UpDownSystematic")):
+        if any(
+            string in behavior
+            for string in ("Systematic", "UpDownSystematic", "UpDownMultiSystematic")
+        ):
             diff.remove(behavior)
 
     assert len(diff) == 0
