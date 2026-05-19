@@ -102,7 +102,7 @@ def local2globalindex(index, counts):
     index_content = awkward.contents.numpyarray.NumpyArray(index_content)
     # create new parameters for the final array
     parameters = awkward.parameters(index)
-    parameters["__doc__"] = "global " + parameters.get("__doc__", "")
+    parameters["__doc__"] = "global " + parameters["__doc__"]
     return awkward.Array(
         awkward.contents.ListOffsetArray(
             offsets=index_offsets,

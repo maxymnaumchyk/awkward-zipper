@@ -230,11 +230,7 @@ class NanoAOD(BaseLayoutBuilder):
         counter_fields = _get_collection_fields("n", fields)
 
         # parse into high-level records (collections, list collections, and singletons)
-        # Split on the first _ to get the collection prefix — e.g. "Electron_pt" → "Electron"
-        # If that index is empty (field starts with _, like "_collection0"), use "_collection0" instead
-        collections = {
-            k.split("_", maxsplit=1)[0] or k for k in fields - counter_fields
-        }
+        collections = {k.split("_", maxsplit=1)[0] for k in fields - counter_fields}
 
         # handles collections with underscore in their names
         def _special_collections(collections, fields):
@@ -433,57 +429,39 @@ class NanoAOD(BaseLayoutBuilder):
             else:
                 # simple collection
                 content = {}
-                offsets = None
                 for field in _get_collection_fields(name_with_underscore, fields):
                     arr = _non_materializing_get_field(array, field)
 
                     *_, buffers = awkward.to_buffers(arr)
-                    if {"node0-offsets", "node1-data"} == set(buffers):
-                        # RNTuple: fields are already jagged (ListOffsetArray)
-                        if offsets is None:
-                            offsets = buffers["node0-offsets"]
-                        content[field.removeprefix(name_with_underscore)] = (
-                            awkward.contents.NumpyArray(
-                                buffers["node1-data"],
-                                parameters=arr.layout.parameters,
-                            )
+                    assert {"node0-data"} == set(buffers)
+                    # take flat data
+                    content[field.removeprefix(name_with_underscore)] = (
+                        awkward.contents.NumpyArray(
+                            buffers["node0-data"],
+                            # forward parameters
+                            parameters=arr.layout.parameters,
                         )
-                    else:
-                        assert {"node0-data"} == set(buffers)
-                        # take flat data
-                        content[field.removeprefix(name_with_underscore)] = (
-                            awkward.contents.NumpyArray(
-                                buffers["node0-data"],
-                                parameters=arr.layout.parameters,
-                            )
-                        )
+                    )
 
                 _content = (*content.values(),)
                 _fields = (*content.keys(),)
                 _length = _check_equal_lengths(_content)
 
-                record = awkward.contents.RecordArray(
+                output[name] = awkward.contents.RecordArray(
                     _content, _fields, length=_length, parameters={}
                 )
-                record.parameters.update(
+                # update parameters
+                output[name].parameters.update(
                     {
                         "collection_name": name,
                         "__record__": mixin,
                     }
                 )
 
-                if offsets is not None:
-                    output[name] = awkward.contents.ListOffsetArray(
-                        offsets=awkward.index.Index(offsets),
-                        content=record,
-                    )
-                else:
-                    output[name] = record
-
         # final nanoevents (most outer) zip
         _content = (*output.values(),)
         _fields = (*output.keys(),)
-        _length = int(awkward.num(array, axis=0))
+        _length = awkward.num(array, axis=0)
 
         nanoevents = awkward.Array(
             awkward.contents.RecordArray(_content, _fields, length=_length),
