@@ -41,8 +41,8 @@ dev = [
     "mypy",
     # use a version of coffea where awkward-zipper was not a part of it
     "coffea",
-    # change to release as soon as the PR exists in a release
-    "uproot@git+https://github.com/scikit-hep/uproot5@pfackeldey/uproot_lazy",
+    # use the version of uproot that supports virtual arrays
+    "uproot",
     "requests",
     "aiohttp",
 ]
@@ -62,6 +62,9 @@ check_untyped_defs = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 strict = false
 ignore_missing_imports = true
+
+[tool.uv]
+prerelease = "disallow"
 
 [tool.ruff.lint]
 ignore = [
