@@ -64,7 +64,8 @@ strict = false
 ignore_missing_imports = true
 
 [tool.uv]
-prerelease = "disallow"
+# `yarl` (v1.24.0) doesn't support CPython 3.11 (`cp311`) right now
+constraint-dependencies = ["yarl<1.24.0"]
 
 [tool.ruff.lint]
 ignore = [
