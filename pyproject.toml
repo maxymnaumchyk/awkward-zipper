@@ -63,6 +63,9 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 strict = false
 ignore_missing_imports = true
 
+[tool.uv]
+prerelease = "disallow"
+
 [tool.ruff.lint]
 ignore = [
     "PLR",  # Design related pylint codes
