@@ -2,8 +2,6 @@ import awkward
 import numpy as np
 
 from awkward_zipper.behaviors import base, vector
-from awkward_zipper.behaviors._dask_compat import dask_method, dask_property
-from awkward_zipper.behaviors.base import _ClassMethodFn
 
 behavior = {}
 behavior.update(base.behavior)
@@ -48,7 +46,6 @@ def _set_repr_name(classname):
 class edm4hep_nanocollection(base.NanoCollection):
     """Modified NanoCollection for EDM4HEP"""
 
-    @dask_method
     def _apply_nested_global_index(self, index):
         """Similar to _apply_global_index but the indexes are twice nested"""
         # extract the shape of the index
@@ -66,26 +63,11 @@ class edm4hep_nanocollection(base.NanoCollection):
         out = awkward.unflatten(out, counts2, axis=0)
         return awkward.unflatten(out, counts1, axis=0)
 
-    @_apply_nested_global_index.dask
-    def _apply_nested_global_index(self, dask_array, index):
-        """Similar to _apply_global_index but the indexes are twice nested"""
-        return dask_array.map_partitions(
-            _ClassMethodFn("_apply_nested_global_index"),
-            index,
-            label="apply_nested_global_index",
-        )
-
-    @dask_property
+    @property
     def List_Relations(self):
         """List all the branches that are for OneToOneRelations or OneToManyRelations"""
         return {name for name in self.fields if "_idx_" in name}
 
-    @List_Relations.dask
-    def List_Relations(self, dask_array):
-        """List all the branches that are for OneToOneRelations or OneToManyRelations"""
-        return {name for name in dask_array.fields if "_idx_" in name}
-
-    @dask_method
     def Map_Relation(self, generic_name, target_name):
         """Map a OneToOne or a OneToMany Relation to it's target collection
         Options: generic_name | str | name of the relation in EDM4HEP.yaml
@@ -116,38 +98,7 @@ class edm4hep_nanocollection(base.NanoCollection):
         msg = f"Index is highly nested!\n{index}"
         raise RuntimeError(msg)
 
-    @Map_Relation.dask
-    def Map_Relation(self, dask_array, generic_name, target_name):
-        """Map a OneToOne or a OneToMany Relation to it's target collection
-        Options: generic_name | str | name of the relation in EDM4HEP.yaml
-                 target_name | str | name of the target collection
-
-        Note: All relation branches are named as,
-              genericname_idx_targetname_index
-                or
-              genericname_idx_targetname_index_Global
-                or
-              genericname_idx_targetname_collectionID
-            One can list out all such branches with the method List_Relations
-        """
-        name_struct = generic_name + "_idx_" + target_name + "_index_Global"
-        idx_field_names = [name for name in dask_array.fields if name_struct in name]
-        if len(idx_field_names) == 0:
-            msg = f"*{name_struct} not found in the current collection"
-            raise FileNotFoundError(msg)
-        if len(idx_field_names) > 1:
-            msg = f"More than one field available for *{name_struct}!"
-            raise RuntimeError(msg)
-
-        index = dask_array[idx_field_names[0]]
-        if index.ndim == 2:
-            return dask_array._events()[target_name]._apply_global_index(index)
-        if index.ndim == 3 or index.ndim == 4:
-            return dask_array._events()[target_name]._apply_nested_global_index(index)
-        msg = f"Index is highly nested!\n{index}"
-        raise RuntimeError(msg)
-
-    @dask_property
+    @property
     def List_Links(self):
         """List all the branches that are Links"""
         return {
@@ -156,16 +107,6 @@ class edm4hep_nanocollection(base.NanoCollection):
             if (("Link_from" in name) or ("Link_to" in name))
         }
 
-    @List_Links.dask
-    def List_Links(self, dask_array):
-        """List all the branches that are Links"""
-        return {
-            name
-            for name in dask_array.fields
-            if (("Link_from" in name) or ("Link_to" in name))
-        }
-
-    @dask_method
     def Map_Link(self, generic_name, target_name):
         """Map a Link to it's target collection
         Note: This method only works when copy_links_to_target_datatype is set to true in the schema
@@ -186,29 +127,6 @@ class edm4hep_nanocollection(base.NanoCollection):
             raise FileNotFoundError(msg)
         return self._events()[target_name]._apply_global_index(
             self[idx_field_name]["index_Global"]
-        )
-
-    @Map_Link.dask
-    def Map_Link(self, dask_array, generic_name, target_name):
-        """Map a Link to it's target collection
-        Note: This method only works when copy_links_to_target_datatype is set to true in the schema
-        Options: generic_name | str | name of the Link in EDM4HEP.yaml
-                 target_name | str | name of the target collection
-
-        Note: All link branches are named as,
-              Link_from_genericname_idx_targetname_index or Link_to_genericname_idx_targetname_index
-                or
-              Link_from_genericname_idx_targetname_index_Global or Link_to_genericname_idx_targetname_index_Global
-                or
-              Link_from_genericname_idx_targetname_collectionID or Link_to_genericname_idx_targetname_collectionID
-            One can list out all such branches with the method List_Links
-        """
-        idx_field_name = "Link_" + generic_name + "_" + target_name
-        if idx_field_name not in dask_array.fields:
-            msg = f"{idx_field_name} not found in the current collection"
-            raise FileNotFoundError(msg)
-        return dask_array._events()[target_name]._apply_global_index(
-            dask_array[idx_field_name]["index_Global"]
         )
 
 

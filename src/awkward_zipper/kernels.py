@@ -410,6 +410,14 @@ def begin_end_mapping(begin, end, target_content):
     """
     counts = begin_end_counts(begin.content, end.content)
     inner_offsets = counts2offsets(awkward.Array(counts))
+    # coffea builds this via awkward.ArrayBuilder, which yields float64 regardless
+    # of the target dtype; match that so the layouts compare equal
+    if isinstance(target_content, awkward.contents.NumpyArray):
+        target_content = _lazy_flat_content(
+            [target_content.data],
+            lambda x: np.asarray(x).astype(np.float64),
+            np.float64,
+        )
     inner = awkward.contents.ListOffsetArray(
         awkward.index.Index(inner_offsets), target_content
     )
@@ -426,6 +434,26 @@ def _local2global_compute(index, index_offsets, target_offsets):
     stops = np.repeat(target_offsets[1:], counts)
     out = np.where(index >= 0, index + starts, -1)
     return np.where(out < stops, out, -1)
+
+
+def regular_to_jagged(regular, dtype=np.float64):
+    """Convert a ``RegularArray(size, NumpyArray)`` to a jagged list of ``dtype``.
+
+    EDM4HEP stores fixed-size members (e.g. ``covMatrix.values[21]``) as a regular
+    array; coffea's ArrayBuilder-based transform turns them into variable-length
+    lists of float64. Evaluated lazily.
+    """
+    inner = regular.content
+    size = regular.size
+    offsets = _lazy_flat_content(
+        [inner.data],
+        lambda x: np.arange(0, len(x) + 1, size, dtype=np.int64),
+        np.int64,
+    )
+    content = _lazy_flat_content(
+        [inner.data], lambda x: np.asarray(x).astype(dtype), dtype
+    )
+    return awkward.contents.ListOffsetArray(awkward.index.Index(offsets.data), content)
 
 
 def local2global(index, target_offsets):
