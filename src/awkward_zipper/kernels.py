@@ -359,6 +359,129 @@ def full_like_from_counts(counts, fill_value):
     )
 
 
+def _lazy_flat_content(datas, fn, dtype):
+    """Apply ``fn`` to flat buffers lazily, returning a ``NumpyArray`` content.
+
+    Each element of ``datas`` is a raw buffer (numpy array or ``VirtualNDArray``).
+    If any is an unmaterialized virtual buffer the result is a ``VirtualNDArray``
+    whose generator runs ``fn`` on the materialized inputs; otherwise ``fn`` runs
+    eagerly.
+    """
+    is_virtual = awkward._nplikes.virtual.VirtualNDArray
+
+    def _materialize(x):
+        return x.materialize() if isinstance(x, is_virtual) else x
+
+    virtuals = [d for d in datas if isinstance(d, is_virtual) and not d.is_materialized]
+    if virtuals:
+        base = virtuals[0]
+        result = awkward._nplikes.virtual.VirtualNDArray(
+            nplike=base._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=dtype,
+            generator=lambda: fn(*(ensure_array(_materialize(d)) for d in datas)),
+            shape_generator=None,
+        )
+    else:
+        result = fn(*(ensure_array(d) for d in datas))
+    return awkward.contents.NumpyArray(result)
+
+
+def begin_end_counts(begin_content, end_content):
+    """Flat ``end - begin`` counts for EDM4HEP begin/end index ranges (lazy)."""
+    return _lazy_flat_content(
+        [begin_content.data, end_content.data],
+        lambda b, e: (e.astype(np.int64) - b.astype(np.int64)),
+        np.int64,
+    )
+
+
+def begin_end_mapping(begin, end, target_content):
+    """Group ``target_content`` into per-item lists using begin/end index ranges.
+
+    EDM4HEP stores OneToMany relations and VectorMembers as flat per-event arrays
+    plus per-item ``{member}_begin`` / ``{member}_end`` ranges. Those ranges are
+    contiguous and exactly cover the target, so the mapping reduces to regrouping
+    the target by ``counts = end - begin``.
+
+    ``begin``/``end`` are the per-event jagged range arrays (``ListOffsetArray``);
+    ``target_content`` is the flat content of the per-event target array. Returns
+    a doubly-jagged ``ListOffsetArray`` (event -> item -> sub-items).
+    """
+    counts = begin_end_counts(begin.content, end.content)
+    inner_offsets = counts2offsets(awkward.Array(counts))
+    inner = awkward.contents.ListOffsetArray(
+        awkward.index.Index(inner_offsets), target_content
+    )
+    return awkward.contents.ListOffsetArray(begin.offsets, inner)
+
+
+def _local2global_compute(index, index_offsets, target_offsets):
+    """``index + target_offsets[:-1]`` per event, -1 where out of range."""
+    index = np.asarray(index).astype(np.int64)
+    index_offsets = np.asarray(index_offsets).astype(np.int64)
+    target_offsets = np.asarray(target_offsets).astype(np.int64)
+    counts = np.diff(index_offsets)
+    starts = np.repeat(target_offsets[:-1], counts)
+    stops = np.repeat(target_offsets[1:], counts)
+    out = np.where(index >= 0, index + starts, -1)
+    return np.where(out < stops, out, -1)
+
+
+def local2global(index, target_offsets):
+    """Turn a jagged local index into a global index into a target collection.
+
+    Mirrors coffea's ``local2global`` transform. ``index`` is a per-event jagged
+    ``ListOffsetArray``; ``target_offsets`` is the target collection's per-event
+    offsets buffer. Returns the flat (global) index content, evaluated lazily.
+    """
+    target_data = (
+        target_offsets.data
+        if isinstance(target_offsets, awkward.index.Index)
+        else target_offsets
+    )
+    return _lazy_flat_content(
+        [index.content.data, index.offsets.data, target_data],
+        _local2global_compute,
+        np.int64,
+    )
+
+
+def nested_local2global(nested_index, target_offsets):
+    """``local2global`` for a doubly-jagged index (event -> item -> indices).
+
+    ``nested_index`` is ``ListOffsetArray(ListOffsetArray(NumpyArray))``; the
+    per-event grouping used for the offset lookup is the OUTER list.
+    """
+    inner = nested_index.content
+    target_data = (
+        target_offsets.data
+        if isinstance(target_offsets, awkward.index.Index)
+        else target_offsets
+    )
+
+    def _compute(flat_index, outer_offsets, inner_offsets, target_offs):
+        outer_offsets = np.asarray(outer_offsets).astype(np.int64)
+        inner_offsets = np.asarray(inner_offsets).astype(np.int64)
+        # number of flat elements per event = inner_offsets[outer[e+1]] - inner_offsets[outer[e]]
+        per_event = np.diff(inner_offsets[outer_offsets])
+        event_offsets = np.empty(len(per_event) + 1, dtype=np.int64)
+        event_offsets[0] = 0
+        np.cumsum(per_event, out=event_offsets[1:])
+        return _local2global_compute(flat_index, event_offsets, target_offs)
+
+    return _lazy_flat_content(
+        [
+            inner.content.data,
+            nested_index.offsets.data,
+            inner.offsets.data,
+            target_data,
+        ],
+        _compute,
+        np.int64,
+    )
+
+
 @dispatch_wrap
 @numba.njit
 def _distinct_parent_kernel(allpart_parent, allpart_pdg):
