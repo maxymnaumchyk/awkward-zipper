@@ -30,6 +30,19 @@ _LIST_LIKE = (
 )
 
 
+def _maybe_unknown_length(contents, eager_length_fn):
+    """Length for a ``RecordArray``: ``unknown_length`` while any content is
+    virtual (a concrete length would slice the contents and materialize their
+    shape generators), else the concrete length from ``eager_length_fn()``.
+
+    ``eager_length_fn`` is a callable so the concrete length (which itself can
+    materialize) is only computed once everything is already materialized.
+    """
+    if all(c.is_all_materialized for c in contents):
+        return eager_length_fn()
+    return awkward._nplikes.shape.unknown_length
+
+
 def _lorentz_from_tlv(content):
     """Convert a ROOT ``TLorentzVector`` record content to a ``LorentzVector``.
 
@@ -49,7 +62,7 @@ def _lorentz_from_tlv(content):
         return awkward.contents.RecordArray(
             [fX, fY, fZ, fE],
             ["x", "y", "z", "t"],
-            length=content.length,
+            length=_maybe_unknown_length([fX, fY, fZ, fE], lambda: content.length),
             parameters={"__record__": "LorentzVector"},
         )
     if isinstance(content, _LIST_LIKE):
@@ -71,10 +84,11 @@ def _strip_tref(content):
         keep = [f for f in content.fields if not f.startswith("@")]
         if len(keep) < len(content.fields):
             indices = [content.fields.index(f) for f in keep]
+            kept = [content.contents[i] for i in indices]
             return awkward.contents.RecordArray(
-                [content.contents[i] for i in indices],
+                kept,
                 keep,
-                length=content.length,
+                length=_maybe_unknown_length(kept, lambda: content.length),
                 parameters=content.parameters,
             )
     if isinstance(content, _LIST_LIKE):
@@ -239,7 +253,9 @@ class Delphes(BaseLayoutBuilder):
             record = awkward.contents.RecordArray(
                 _content,
                 _fields,
-                length=_total_items(offsets),
+                length=_maybe_unknown_length(
+                    _content, lambda offsets=offsets: _total_items(offsets)
+                ),
                 parameters={"__record__": mixin, "collection_name": name},
             )
 

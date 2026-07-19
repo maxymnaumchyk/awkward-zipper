@@ -44,13 +44,10 @@ def test_delphes_whole_virtual():
     )
 
 
-def test_no_data_materialization():
-    # offsets buffers may be touched during construction (to be tightened later),
-    # but no heavy *data* buffers should be materialized while building the layout
-    data_accesses = [
-        a for a in construction_access_log if a.buffer_key.endswith("-data")
-    ]
-    assert len(data_accesses) == 0
+def test_no_materialization():
+    # construction is fully lazy: no buffers (neither offsets/Index nor data)
+    # are materialized while building the layout
+    assert len(construction_access_log) == 0
 
 
 def test_lorentz_and_tref_conversions():
@@ -85,7 +82,7 @@ def test_behaviors():
 if __name__ == "__main__":
     test_delphes_whole_eager()
     test_delphes_whole_virtual()
-    test_no_data_materialization()
+    test_no_materialization()
     test_lorentz_and_tref_conversions()
     test_singletons_flattened()
     test_behaviors()
