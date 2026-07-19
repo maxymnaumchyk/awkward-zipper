@@ -13,6 +13,7 @@ dependencies = [
     "awkward >=2.8.8",
     "vector",
     "numba",
+    "pyyaml",
 ]
 classifiers = [
     "Development Status :: 1 - Planning",
