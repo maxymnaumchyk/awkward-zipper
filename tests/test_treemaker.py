@@ -55,14 +55,10 @@ def test_treemaker_whole_virtual():
     )
 
 
-def test_no_data_materialization():
-    # NOTE: full lazy construction (zero accesses) is a goal but not yet reached;
-    # some offsets buffers are currently touched. What must hold is that no heavy
-    # *data* buffers are materialized while building the layout.
-    data_accesses = [
-        a for a in construction_access_log if a.buffer_key.endswith("-data")
-    ]
-    assert len(data_accesses) == 0
+def test_no_materialization():
+    # construction is fully lazy: no buffers (neither offsets/Index nor data)
+    # are materialized while building the layout
+    assert len(construction_access_log) == 0
 
 
 def test_composite_vector_collections():
@@ -106,7 +102,7 @@ def test_behaviors():
 if __name__ == "__main__":
     test_treemaker_whole_eager()
     test_treemaker_whole_virtual()
-    test_no_data_materialization()
+    test_no_materialization()
     test_composite_vector_collections()
     test_nested_subcollections()
     test_behaviors()

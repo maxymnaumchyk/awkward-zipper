@@ -48,6 +48,19 @@ def _jagged_offsets(arr):
     return _as_layout(arr).offsets
 
 
+def _record_length(contents):
+    """Length to give a ``RecordArray`` built from ``contents``.
+
+    Returns ``unknown_length`` when any content is still virtual: passing a
+    concrete length would make ``RecordArray`` slice the contents to reconcile
+    the length, which materializes the (virtual) shape generators. When
+    everything is materialized we validate and return the real common length.
+    """
+    if not all(_as_layout(c).is_all_materialized for c in contents):
+        return awkward._nplikes.shape.unknown_length
+    return _check_equal_lengths(contents)
+
+
 def _zip_jagged(members, offsets, record_name=None, parameters=None):
     """Build a jagged collection (``ListOffsetArray`` of ``RecordArray``).
 
@@ -65,14 +78,13 @@ def _zip_jagged(members, offsets, record_name=None, parameters=None):
     """
     contents = tuple(members.values())
     fields = tuple(members.keys())
-    length = _check_equal_lengths(contents)
     params = {}
     if record_name is not None:
         params["__record__"] = record_name
     if parameters:
         params.update(parameters)
     record = awkward.contents.RecordArray(
-        contents, fields, length=length, parameters=params
+        contents, fields, length=_record_length(contents), parameters=params
     )
     return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
 
@@ -83,7 +95,7 @@ def _append_record_fields(listoffset, new_members):
     contents = list(record.contents) + list(new_members.values())
     fields = list(record.fields) + list(new_members.keys())
     new_record = awkward.contents.RecordArray(
-        contents, fields, length=record.length, parameters=record.parameters
+        contents, fields, length=_record_length(contents), parameters=record.parameters
     )
     return awkward.contents.ListOffsetArray(
         offsets=listoffset.offsets, content=new_record
