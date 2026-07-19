@@ -456,6 +456,38 @@ def regular_to_jagged(regular, dtype=np.float64):
     return awkward.contents.ListOffsetArray(awkward.index.Index(offsets.data), content)
 
 
+def grow_local_index_to_target_shape(index, target_offsets):
+    """Grow a local index to the target's shape, filling unreferenced slots with -1.
+
+    Mirrors coffea's ``grow_local_index_to_target_shape``: for every element of the
+    target, emit its local index if that index appears in ``index`` for the event,
+    otherwise -1. Returns the flat content, evaluated lazily.
+    """
+
+    def _compute(idx_content, idx_offsets, tgt_offsets):
+        idx_content = np.asarray(idx_content).astype(np.int64)
+        idx_offsets = np.asarray(idx_offsets).astype(np.int64)
+        tgt_offsets = np.asarray(tgt_offsets).astype(np.int64)
+        out = np.empty(int(tgt_offsets[-1]), dtype=np.int64)
+        for event in range(len(tgt_offsets) - 1):
+            start, stop = int(tgt_offsets[event]), int(tgt_offsets[event + 1])
+            all_index = np.arange(stop - start, dtype=np.int64)
+            present = np.isin(
+                all_index, idx_content[idx_offsets[event] : idx_offsets[event + 1]]
+            )
+            out[start:stop] = np.where(present, all_index, -1)
+        return out
+
+    target_data = (
+        target_offsets.data
+        if isinstance(target_offsets, awkward.index.Index)
+        else target_offsets
+    )
+    return _lazy_flat_content(
+        [index.content.data, index.offsets.data, target_data], _compute, np.int64
+    )
+
+
 def local2global(index, target_offsets):
     """Turn a jagged local index into a global index into a target collection.
 

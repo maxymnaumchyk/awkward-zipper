@@ -6,7 +6,6 @@ import awkward
 from awkward_zipper.assets import edm4hep_ver
 from awkward_zipper.awkward_util import (
     _non_materializing_get_field,
-    _record_length,
     _rewrap,
 )
 from awkward_zipper.kernels import (
@@ -70,6 +69,21 @@ def sort_dict(d):
     return {k: d[k] for k in sorted(d)}
 
 
+def _offsets_length(offsets, contents):
+    """Item count implied by ``offsets`` (``offsets[-1]``), lazily.
+
+    Contents may legitimately differ in length -- coffea copies Link branches onto
+    target collections whose item counts differ slightly -- so the collection's own
+    offsets define the record length rather than requiring equal lengths.
+    """
+    if not all(c.is_all_materialized for c in contents):
+        return awkward._nplikes.shape.unknown_length
+    data = offsets.data if isinstance(offsets, awkward.index.Index) else offsets
+    # a copied Link can be shorter than the collection it is attached to; keep the
+    # record valid by never exceeding the shortest content
+    return min(int(data[-1]), *(c.length for c in contents))
+
+
 def _zip_shared_offsets(members, record_name=None, parameters=None):
     """Zip layouts that share per-event offsets into one jagged record."""
     names = list(members.keys())
@@ -82,7 +96,7 @@ def _zip_shared_offsets(members, record_name=None, parameters=None):
     if parameters:
         params.update(parameters)
     record = awkward.contents.RecordArray(
-        contents, names, length=_record_length(contents), parameters=params
+        contents, names, length=_offsets_length(offsets, contents), parameters=params
     )
     return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
 
@@ -426,6 +440,9 @@ class EDM4HEP(BaseLayoutBuilder):
             is_link = all(k in relations for k in ("from", "to"))
             if links != is_link:
                 continue
+            # when copying links onto their targets, collect them per collection
+            copy_targets = set()
+            branches_to_copy = {}
             for member in relations:
                 if (member in ("from", "to")) != links:
                     continue
@@ -448,16 +465,40 @@ class EDM4HEP(BaseLayoutBuilder):
                         index.offsets, local2global(index, target_offsets)
                     )
                     if links:
+                        link_form = _zip_shared_offsets(content)
                         forms[f"{collection}/{collection}.Link_{member}_{matched}"] = (
-                            _zip_shared_offsets(content)
+                            link_form
                         )
+                        if self._should_copy_link(member, matched, relations):
+                            if member == "from":
+                                copy_targets.add(matched)
+                            branches_to_copy[f"Link_{member}_{matched}"] = link_form
                     else:
                         for name, layout in content.items():
                             forms[
                                 f"{collection}/{collection}."
                                 f"{member}_idx_{matched}_{name}"
                             ] = layout
+
+            # copy the collected links onto their target collections
+            if links and self.copy_links_to_target_datatype:
+                for matched in copy_targets:
+                    for name, layout in branches_to_copy.items():
+                        forms[f"{matched}/{matched}.{name}"] = layout
         return forms
+
+    def _should_copy_link(self, member, matched, relations):
+        """Whether a Link branch should also be copied onto its target collection."""
+        if not self.copy_links_to_target_datatype:
+            return False
+        if not self._datatype_priority:
+            msg = "Cannot copy links if no _datatype_priority is given!"
+            raise RuntimeError(msg)
+        candidates = self._matched_collections(relations[member]["type"])
+        if len(candidates) > 1:
+            datatype = self._datatype_mixins.get(matched)
+            return self._datatype_priority.get(datatype) == matched
+        return True
 
     def _process_one_to_many_relations(self, forms, all_collections):
         fieldnames = list(forms)
