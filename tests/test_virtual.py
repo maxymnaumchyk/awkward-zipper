@@ -20,6 +20,8 @@ array = tree.arrays(
 # construct an awkward array using awkward-zipper
 restructure = NanoAOD(version="latest")
 zipper_array = restructure(array)
+# snapshot the access log right after construction (later comparisons materialize)
+construction_access_log_zipper = list(access_log_zipper)
 
 print("access_log_zipper: ", access_log_zipper)
 
@@ -32,11 +34,14 @@ events = NanoEventsFactory.from_root(
     access_log=access_log_coffea,
 )
 coffea_array = events.events()
+construction_access_log_coffea = list(access_log_coffea)
 
 
 def test_access_log():
-    assert len(access_log_zipper) == 0
-    assert len(access_log_coffea) == 0
+    # construction is fully lazy: no buffers (neither offsets/Index nor data)
+    # are materialized while building the layout
+    assert len(construction_access_log_zipper) == 0
+    assert len(construction_access_log_coffea) == 0
 
 
 def test_nano_dy_whole():
