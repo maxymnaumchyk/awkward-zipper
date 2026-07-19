@@ -301,6 +301,64 @@ def counts2offsets(counts):
     return _counts2offsets(counts.layout.data)
 
 
+def full_like_from_counts(counts, fill_value):
+    """Create a jagged array shaped like a collection with ``counts`` elements per
+    event, with every element set to ``fill_value`` (as float32).
+
+    This mirrors coffea's ``full_like_from_offsets`` transform, but works from the
+    ``n{collection}`` counts branch instead of the ``o{collection}`` offsets branch.
+    It is used to synthesize branches (e.g. ``Photon_mass``, ``Jet_charge``) that
+    must be present for the 4-vector behaviors to work.
+
+    Only the flat content of the returned array is ultimately consumed by the
+    schema (the collection re-wraps it with its own offsets), but a valid
+    ``ListOffsetArray`` is returned so that ``awkward.to_buffers`` yields the
+    expected ``{"node0-offsets", "node1-data"}`` buffers.
+    """
+
+    def _offsets_from_counts(counts_arr):
+        counts_arr = ensure_array(counts_arr)
+        offsets = np.empty(len(counts_arr) + 1, dtype=np.int64)
+        offsets[0] = 0
+        np.cumsum(counts_arr, out=offsets[1:])
+        return offsets
+
+    def _content_from_counts(counts_arr):
+        counts_arr = ensure_array(counts_arr)
+        n_elements = int(counts_arr.sum())
+        return np.full(n_elements, fill_value, dtype=np.float32)
+
+    if not counts.layout.is_all_materialized:
+        virtual_array = counts.layout.data
+        # the outer (per-event) length is known even when the data is virtual, so
+        # give the offsets a concrete shape: this keeps awkward.to_buffers from
+        # having to materialize the counts just to learn the list length
+        n_events = counts.layout.length
+        offsets = awkward._nplikes.virtual.VirtualNDArray(
+            nplike=virtual_array._nplike,
+            shape=(n_events + 1,),
+            dtype=np.int64,
+            generator=lambda: _offsets_from_counts(virtual_array.materialize()),
+            shape_generator=None,
+        )
+        content = awkward._nplikes.virtual.VirtualNDArray(
+            nplike=virtual_array._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=np.float32,
+            generator=lambda: _content_from_counts(virtual_array.materialize()),
+            shape_generator=None,
+        )
+    else:
+        offsets = _offsets_from_counts(counts)
+        content = _content_from_counts(counts)
+
+    return awkward.Array(
+        awkward.contents.ListOffsetArray(
+            awkward.index.Index(offsets), awkward.contents.NumpyArray(content)
+        )
+    )
+
+
 @dispatch_wrap
 @numba.njit
 def _distinct_parent_kernel(allpart_parent, allpart_pdg):

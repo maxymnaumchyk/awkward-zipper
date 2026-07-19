@@ -14,6 +14,7 @@ from awkward_zipper.kernels import (
     counts2offsets,
     distinct_children_deep,
     distinct_parent,
+    full_like_from_counts,
     local2globalindex,
     nestedindex,
 )
@@ -80,6 +81,7 @@ class NanoAOD(BaseLayoutBuilder):
         "LHEPart": "PtEtaPhiMCollection",
         "SubGenJetAK8": "PtEtaPhiMCollection",
         "SubJet": "PtEtaPhiMCollection",
+        "CorrT1METJet": "PtEtaPhiMCollection",
         # Candidate: lorentz + charge
         "Electron": "Electron",
         "LowPtElectron": "LowPtElectron",
@@ -171,6 +173,34 @@ class NanoAOD(BaseLayoutBuilder):
         ),
     }
     """Special arrays, where the callable and input arrays are specified in the value"""
+    full_like_items: tp.ClassVar = {
+        "Photon_mass": ("nPhoton", 0.0),
+        "Photon_charge": ("nPhoton", 0.0),
+        "Jet_charge": ("nJet", 0.0),
+        "FatJet_charge": ("nFatJet", 0.0),
+        "TrigObj_mass": ("nTrigObj", 0.0),
+        "FsrPhoton_mass": ("nFsrPhoton", 0.0),
+        "FsrPhoton_charge": ("nFsrPhoton", 0.0),
+        "CorrT1METJet_mass": ("nCorrT1METJet", 0.0),
+        "IsoTrack_mass": ("nIsoTrack", 0.0),
+        "SoftActivityJet_mass": ("nSoftActivityJet", 0.0),
+    }
+    """Arrays that should be filled with constant values if not present to satisfy 4-vector requirements.
+
+    Each value is a ``(counts_branch, fill_value)`` pair; the array is built jagged
+    from the ``n{collection}`` counts branch (mirrors coffea's ``full_like_items``,
+    which uses the ``o{collection}`` offsets branch).
+    """
+    rename_items: tp.ClassVar = {
+        "Electron_regrEnergy": "Electron_energy",
+        "Photon_regrEnergy": "Photon_energy",
+    }
+    """Arrays that should be renamed to ensure proper 4-vector behavior"""
+    alias_items: tp.ClassVar = {
+        "CorrT1METJet_pt": "CorrT1METJet_rawPt",
+        "CorrT1METJet_mass": "CorrT1METJet_rawMass",
+    }
+    """Arrays that should be aliased to ensure proper 4-vector behavior"""
 
     def __init__(self, version="latest"):
         self._version = version
@@ -343,6 +373,52 @@ class NanoAOD(BaseLayoutBuilder):
                         ),
                     )
                 new_fields[name] = fcn(*input_arrays)
+
+        # Create full-like arrays (constant-valued branches needed by 4-vectors)
+        for name, (counts_branch, fill_value) in self.full_like_items.items():
+            if counts_branch in fields:
+                if name in fields or name in new_fields:
+                    warnings.warn(
+                        f"Branch {name} already exists but its values will be replaced with {fill_value}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                new_fields[name] = full_like_from_counts(
+                    _non_materializing_get_field(array, counts_branch), fill_value
+                )
+
+        # Rename arrays (e.g. to avoid clashing with a mixin-provided field)
+        for new_name, old_name in self.rename_items.items():
+            if old_name in fields or old_name in new_fields:
+                if new_name in fields or new_name in new_fields:
+                    warnings.warn(
+                        f"Branch {new_name} already exists but it will be replaced with {old_name}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                if old_name in new_fields:
+                    new_fields[new_name] = new_fields.pop(old_name)
+                else:
+                    new_fields[new_name] = _non_materializing_get_field(array, old_name)
+                    fields.discard(old_name)
+
+        # Alias arrays (make a branch available under another name)
+        for alias_name, original_name in self.alias_items.items():
+            if original_name in fields or original_name in new_fields:
+                if (
+                    alias_name in fields or alias_name in new_fields
+                ) and alias_name != "CorrT1METJet_mass":
+                    warnings.warn(
+                        f"Branch {alias_name} already exists but it will be replaced with {original_name}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                if original_name in new_fields:
+                    new_fields[alias_name] = new_fields[original_name]
+                else:
+                    new_fields[alias_name] = _non_materializing_get_field(
+                        array, original_name
+                    )
 
         output = {}
         for name in collections:
@@ -581,3 +657,17 @@ class ScoutingNanoAOD(NanoAOD):
     }
 
     all_cross_references: tp.ClassVar = {**NanoAOD.all_cross_references}
+
+    full_like_items: tp.ClassVar = {
+        **NanoAOD.full_like_items,
+        "ScoutingJet_charge": ("nScoutingJet", 0.0),
+        "ScoutingFatJet_charge": ("nScoutingFatJet", 0.0),
+        "ScoutingPhoton_m": ("nScoutingPhoton", 0.0),
+        "ScoutingPhoton_charge": ("nScoutingPhoton", 0.0),
+    }
+
+    alias_items: tp.ClassVar = {
+        **NanoAOD.alias_items,
+        "MET_pt": "MET_fiducialGenPt",
+        "MET_phi": "MET_fiducialGenPhi",
+    }
