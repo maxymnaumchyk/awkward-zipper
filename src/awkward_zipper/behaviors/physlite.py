@@ -9,7 +9,6 @@ from awkward_zipper.behaviors import base, vector
 from awkward_zipper.behaviors._dask_compat import (
     _import_dask_awkward,
     _isinstance,
-    dask_property,
 )
 
 behavior = {}
@@ -202,7 +201,7 @@ class Muon(Particle):
 
     # trackParticle does not behave like Muon::trackParticle, which determines which of the various collections
     # to use on the fly (e.g. calotagged muons do not have combined tracks). Fix in future?
-    @dask_property
+    @property
     def trackParticle(self):
         return _element_link_method(
             self,
@@ -211,16 +210,7 @@ class Muon(Particle):
             None,
         )
 
-    @trackParticle.dask
-    def trackParticle(self, dask_array):
-        return _element_link_method(
-            self,
-            "combinedTrackParticleLink",
-            "CombinedMuonTrackParticles",
-            dask_array,
-        )
-
-    @dask_property
+    @property
     def combinedTrackParticle(self):
         return _element_link_method(
             self,
@@ -229,16 +219,7 @@ class Muon(Particle):
             None,
         )
 
-    @combinedTrackParticle.dask
-    def combinedTrackParticle(self, dask_array):
-        return _element_link_method(
-            self,
-            "combinedTrackParticleLink",
-            "CombinedMuonTrackParticles",
-            dask_array,
-        )
-
-    @dask_property
+    @property
     def inDetTrackParticle(self):
         return _element_link_method(
             self,
@@ -247,31 +228,13 @@ class Muon(Particle):
             None,
         )
 
-    @inDetTrackParticle.dask
-    def inDetTrackParticle(self, dask_array):
-        return _element_link_method(
-            self,
-            "inDetTrackParticleLink",
-            "InDetTrackParticles",
-            dask_array,
-        )
-
-    @dask_property
+    @property
     def extrapolatedMuonSpectrometerTrackParticle(self):
         return _element_link_method(
             self,
             "extrapolatedMuonSpectrometerTrackParticleLink",
             "ExtrapolatedMuonTrackParticles",
             None,
-        )
-
-    @extrapolatedMuonSpectrometerTrackParticle.dask
-    def extrapolatedMuonSpectrometerTrackParticle(self, dask_array):
-        return _element_link_method(
-            self,
-            "extrapolatedMuonSpectrometerTrackParticleLink",
-            "ExtrapolatedMuonTrackParticles",
-            dask_array,
         )
 
 
@@ -295,19 +258,13 @@ class Electron(Particle):
     <https://gitlab.cern.ch/atlas/athena/-/blob/21.2/Event/xAOD/xAODEgamma/Root/Electron_v1.cxx>`_.
     """
 
-    @dask_property
+    @property
     def trackParticles(self):
         return _element_link_method(
             self, "trackParticleLinks", "GSFTrackParticles", None
         )
 
-    @trackParticles.dask
-    def trackParticles(self, dask_array):
-        return _element_link_method(
-            self, "trackParticleLinks", "GSFTrackParticles", dask_array
-        )
-
-    @dask_property
+    @property
     def trackParticle(self):
         trackParticles = _element_link_method(
             self, "trackParticleLinks", "GSFTrackParticles", None
@@ -316,24 +273,9 @@ class Electron(Particle):
         slicer = tuple([slice(None) for i in range(trackParticles.ndim - 1)] + [0])
         return trackParticles[slicer]
 
-    @trackParticle.dask
-    def trackParticle(self, dask_array):
-        trackParticles = _element_link_method(
-            self, "trackParticleLinks", "GSFTrackParticles", dask_array
-        )
-        # Ellipsis (..., 0) slicing not supported yet by dask_awkward
-        slicer = tuple([slice(None) for i in range(trackParticles.ndim - 1)] + [0])
-        return trackParticles[slicer]
-
-    @dask_property
+    @property
     def caloClusters(self):
         return _element_link_method(self, "caloClusterLinks", "egammaClusters", None)
-
-    @caloClusters.dask
-    def caloClusters(self, dask_array):
-        return _element_link_method(
-            self, "caloClusterLinks", "egammaClusters", dask_array
-        )
 
 
 _set_repr_name("Electron")
