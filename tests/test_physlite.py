@@ -54,11 +54,10 @@ def test_physlite_whole_virtual():
     )
 
 
-def test_no_data_materialization():
-    data_accesses = [
-        a for a in construction_access_log if a.buffer_key.endswith("-data")
-    ]
-    assert len(data_accesses) == 0
+def test_no_materialization():
+    # construction is fully lazy: no buffers (neither offsets/Index nor data)
+    # are materialized while building the layout
+    assert len(construction_access_log) == 0
 
 
 def test_eventindex_and_derived_fields():
@@ -110,7 +109,7 @@ def test_behaviors():
 if __name__ == "__main__":
     test_physlite_whole_eager()
     test_physlite_whole_virtual()
-    test_no_data_materialization()
+    test_no_materialization()
     test_eventindex_and_derived_fields()
     test_elementlink_reconstitution()
     test_behaviors()
