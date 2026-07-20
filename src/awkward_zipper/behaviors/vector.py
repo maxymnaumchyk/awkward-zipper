@@ -2,7 +2,7 @@
 
 These mixins will eventually be superseded by the `vector <https://github.com/scikit-hep/vector>`__ library,
 which will hopefully be feature-compatible. The 2D vector provides cartesian and polar coordinate attributes,
-where ``r`` represents the polar distance from the origin..  The 3D vector provides cartesian and spherical coordinates,
+where ``r`` represents the polar distance from the origin. The 3D vector provides cartesian and spherical coordinates,
 where ``rho`` represents the 3D distance from the origin and ``r`` is the axial distance from the z axis, so that it can
 subclass the 2D vector. The Lorentz vector also subclasses the 3D vector, adding ``t`` as the fourth
 cartesian coordinate. Aliases typical of momentum vectors are also provided.
@@ -99,15 +99,76 @@ def delta_r(eta1, phi1, eta2, phi2):
 behavior = {}
 behavior.update(vector.backends.awkward.behavior)
 
+# Scikit-hep vector maps each coordinate to a single internal slot, so if
+# a record carries two aliases from the same group (e.g. both ``x`` and
+# ``px``) one is silently ignored. Flag that at validation time.
+_X_COMPONENT = frozenset({"x", "px"})
+_Y_COMPONENT = frozenset({"y", "py"})
+_Z_COMPONENT = frozenset({"z", "pz"})
+_AZIMUTHAL_RADIAL = frozenset({"rho", "pt"})
+_TEMPORAL = frozenset({"t", "tau", "E", "e", "energy", "M", "m", "mass"})
+_AZIMUTHAL_POLAR = frozenset({"rho", "pt", "phi"})
+_AZIMUTHAL_CARTESIAN = frozenset({"x", "px", "y", "py"})
+
+_ALIAS_GROUPS = {
+    "x-component": _X_COMPONENT,
+    "y-component": _Y_COMPONENT,
+    "z-component": _Z_COMPONENT,
+    "azimuthal radial": _AZIMUTHAL_RADIAL,
+    "temporal": _TEMPORAL,
+}
+
+
+def _coordinate_validation(fields):
+    errors = []
+    for label, aliases in _ALIAS_GROUPS.items():
+        overlap = fields & aliases
+        if len(overlap) > 1:
+            errors.append(f"multiple {label} aliases present: {sorted(overlap)}")
+    has_xy = bool(fields & _X_COMPONENT) and bool(fields & _Y_COMPONENT)
+    has_rhophi = bool(fields & _AZIMUTHAL_RADIAL) and "phi" in fields
+    if (has_xy and fields & _AZIMUTHAL_POLAR) or (
+        has_rhophi and fields & _AZIMUTHAL_CARTESIAN
+    ):
+        cartesian = sorted(fields & _AZIMUTHAL_CARTESIAN)
+        polar = sorted(fields & _AZIMUTHAL_POLAR)
+        errors.append(
+            "conflicting azimuthal coordinate representations present: "
+            f"cartesian={cartesian}, polar={polar}"
+        )
+
+    has_z = bool(fields & _Z_COMPONENT)
+    has_theta = "theta" in fields
+    has_eta = "eta" in fields
+    if sum((has_z, has_theta, has_eta)) > 1:
+        present_longitudinal = []
+        if has_z:
+            present_longitudinal.append(f"z/pz={sorted(fields & _Z_COMPONENT)}")
+        if has_theta:
+            present_longitudinal.append("theta=['theta']")
+        if has_eta:
+            present_longitudinal.append("eta=['eta']")
+        errors.append(
+            "conflicting longitudinal coordinate representations present: "
+            + ", ".join(present_longitudinal)
+        )
+    return (
+        errors,
+        has_xy,
+        has_rhophi,
+        has_z or has_theta or has_eta,
+        bool(fields & _TEMPORAL),
+    )
+
 
 @awkward.mixin_class(behavior)
 class TwoVector(MomentumAwkward2D):
     """A cartesian 2-dimensional vector
 
     A heavy emphasis towards a momentum vector interpretation is assumed, hence
-    properties like `px` and `py` are provided in addition to `x` and `y`.
+    properties like ``px`` and ``py`` are provided in addition to ``x`` and ``y``.
 
-    This mixin class requires the parent class to provide items `x` and `y`.
+    This mixin class requires the parent class to provide items ``x`` and ``y``.
     """
 
     @property
@@ -120,14 +181,14 @@ class TwoVector(MomentumAwkward2D):
 
     @property
     def r2(self):
-        """Squared `r`"""
+        """Squared ``r``"""
         return self.rho2
 
     @awkward.mixin_class_method(np.absolute)
     def absolute(self):
         """Returns magnitude of the 2D vector
 
-        Alias for `r`
+        Alias for ``r``
         """
         return self.r
 
@@ -137,7 +198,7 @@ class TwoVector(MomentumAwkward2D):
         return self.scale(-1)
 
     def sum(self, axis=-1):
-        """Sum an array of vectors elementwise using `x` and `y` components"""
+        """Sum an array of vectors elementwise using ``x`` and ``y`` components"""
         return awkward.zip(
             {
                 "x": awkward.sum(self.x, axis=axis),
@@ -149,7 +210,7 @@ class TwoVector(MomentumAwkward2D):
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using `x` and `y` components"""
+        """Multiply this vector by a scalar elementwise using ``x`` and ``y`` components"""
         return self.scale(other)
 
     @awkward.mixin_class_method(np.divide, {numbers.Number})
@@ -171,20 +232,36 @@ class TwoVector(MomentumAwkward2D):
         """Unit vector, a vector of length 1 pointing in the same direction"""
         return self / self.r
 
+    def __awkward_validation__(self):
+        fields = set(self.fields)
+        errors, has_cart, has_polar, has_longitudinal, has_temporal = (
+            _coordinate_validation(fields)
+        )
+        if not (has_cart or has_polar):
+            errors.append(
+                "missing azimuthal coordinates: need x/px and y/py, or rho/pt and phi"
+            )
+        if has_longitudinal or has_temporal:
+            errors.append(
+                "2D vectors cannot include longitudinal or temporal coordinates"
+            )
+        if errors:
+            raise ValueError(f"{type(self).__name__}: " + "; ".join(errors))
+
 
 @awkward.mixin_class(behavior)
 class PolarTwoVector(TwoVector):
     """A polar coordinate 2-dimensional vector
 
-    This mixin class requires the parent class to provide items `rho` and `phi`.
+    This mixin class requires the parent class to provide items ``rho`` and ``phi``.
     Some additional properties are overridden for performance
     """
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using using `x` and `y` components
+        """Multiply this vector by a scalar elementwise using using ``x`` and ``y`` components
 
-        In reality, this directly adjusts `r` and `phi` for performance
+        In reality, this directly adjusts ``r`` and ``phi`` for performance
         """
         return self.scale(other)
 
@@ -199,7 +276,7 @@ class ThreeVector(MomentumAwkward3D):
     """A cartesian 3-dimensional vector
 
     A heavy emphasis towards a momentum vector interpretation is assumed.
-    This mixin class requires the parent class to provide items `x`, `y`, and `z`.
+    This mixin class requires the parent class to provide items ``x``, ``y``, and ``z``.
     """
 
     @property
@@ -212,14 +289,14 @@ class ThreeVector(MomentumAwkward3D):
 
     @property
     def r2(self):
-        """Squared `r`"""
+        """Squared ``r``"""
         return self.rho2
 
     @awkward.mixin_class_method(np.absolute)
     def absolute(self):
         """Returns magnitude of the 3D vector
 
-        Alias for `rho`
+        Alias for ``rho``
         """
         return self.p
 
@@ -235,7 +312,7 @@ class ThreeVector(MomentumAwkward3D):
         return self.scale(1 / other)
 
     def sum(self, axis=-1):
-        """Sum an array of vectors elementwise using `x`, `y`, and `z` components"""
+        """Sum an array of vectors elementwise using ``x``, ``y``, and ``z`` components"""
         return awkward.zip(
             {
                 "x": awkward.sum(self.x, axis=axis),
@@ -248,7 +325,7 @@ class ThreeVector(MomentumAwkward3D):
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using `x`, `y`, and `z` components"""
+        """Multiply this vector by a scalar elementwise using ``x``, ``y``, and ``z`` components"""
         return self.scale(other)
 
     def delta_phi(self, other):
@@ -263,12 +340,28 @@ class ThreeVector(MomentumAwkward3D):
         """Unit vector, a vector of length 1 pointing in the same direction"""
         return self / self.rho
 
+    def __awkward_validation__(self):
+        fields = set(self.fields)
+        errors, has_cart, has_polar, has_longitudinal, has_temporal = (
+            _coordinate_validation(fields)
+        )
+        if not (has_cart or has_polar):
+            errors.append(
+                "missing azimuthal coordinates: need x/px and y/py, or rho/pt and phi"
+            )
+        if not has_longitudinal:
+            errors.append("missing longitudinal coordinate: need z/pz, theta, or eta")
+        if has_temporal:
+            errors.append("3D vectors cannot include temporal coordinates")
+        if errors:
+            raise ValueError(f"{type(self).__name__}: " + "; ".join(errors))
+
 
 @awkward.mixin_class(behavior)
 class SphericalThreeVector(ThreeVector):
     """A spherical coordinate 3-dimensional vector
 
-    This mixin class requires the parent class to provide items `rho`, `theta`, and `phi`.
+    This mixin class requires the parent class to provide items ``rho``, ``theta``, and ``phi``.
     Some additional properties are overridden for performance
     """
 
@@ -282,9 +375,9 @@ class SphericalThreeVector(ThreeVector):
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using `x`, `y`, and `z` components
+        """Multiply this vector by a scalar elementwise using ``x``, ``y``, and ``z`` components
 
-        In reality, this directly adjusts `r`, `theta` and `phi` for performance
+        In reality, this directly adjusts ``r``, ``theta`` and ``phi`` for performance
         """
         return self.scale(other)
 
@@ -324,19 +417,19 @@ class LorentzVector(MomentumAwkward4D):
 
     A heavy emphasis towards a momentum vector interpretation is assumed.
     (+, -, -, -) metric
-    This mixin class requires the parent class to provide items `x`, `y`, `z`, and `t`.
+    This mixin class requires the parent class to provide items ``x``, ``y``, ``z``, and ``t``.
     """
 
     @awkward.mixin_class_method(np.absolute)
     def absolute(self):
         """Magnitude of this Lorentz vector
 
-        Alias for `mass`
+        Alias for ``mass``
         """
         return self.mass
 
     def sum(self, axis=-1):
-        """Sum an array of vectors elementwise using `x`, `y`, `z`, and `t` components"""
+        """Sum an array of vectors elementwise using ``x``, ``y``, ``z``, and ``t`` components"""
         return awkward.zip(
             {
                 "x": awkward.sum(self.x, axis=axis),
@@ -350,7 +443,7 @@ class LorentzVector(MomentumAwkward4D):
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using `x`, `y`, `z`, and `t` components"""
+        """Multiply this vector by a scalar elementwise using ``x``, ``y``, ``z``, and ``t`` components"""
         return self.scale(other)
 
     @awkward.mixin_class_method(np.divide, {numbers.Number})
@@ -384,7 +477,7 @@ class LorentzVector(MomentumAwkward4D):
 
     @property
     def pvec(self):
-        """The `x`, `y` and `z` components as a `ThreeVector`"""
+        """The ``x``, ``y`` and ``z`` components as a `ThreeVector`"""
         return awkward.zip(
             {"x": self.x, "y": self.y, "z": self.z},
             with_name="ThreeVector",
@@ -393,9 +486,9 @@ class LorentzVector(MomentumAwkward4D):
 
     @property
     def boostvec(self):
-        """The `x`, `y` and `z` components divided by `t` as a `ThreeVector`
+        """The ``x``, ``y`` and ``z`` components divided by ``t`` as a `ThreeVector`
 
-        This can be used for boosting. For cases where `|t| <= r`, this
+        This can be used for boosting. For cases where ``|t| <= r``, this
         returns the unit vector.
         """
         return self.to_beta3()
@@ -459,20 +552,38 @@ class LorentzVector(MomentumAwkward4D):
         """
         return _nearest_core(self, other, axis, metric, return_metric, threshold)
 
+    def __awkward_validation__(self):
+        fields = set(self.fields)
+        errors, has_cart, has_polar, has_longitudinal, has_temporal = (
+            _coordinate_validation(fields)
+        )
+        if not (has_cart or has_polar):
+            errors.append(
+                "missing azimuthal coordinates: need x/px and y/py, or rho/pt and phi"
+            )
+        if not has_longitudinal:
+            errors.append("missing longitudinal coordinate: need z/pz, theta, or eta")
+        if not has_temporal:
+            errors.append(
+                "missing temporal coordinate: need t/E/e/energy or tau/M/m/mass"
+            )
+        if errors:
+            raise ValueError(f"{type(self).__name__}: " + "; ".join(errors))
+
 
 @awkward.mixin_class(behavior)
 class PtEtaPhiMLorentzVector(LorentzVector):
     """A Lorentz vector using pseudorapidity and mass
 
-    This mixin class requires the parent class to provide items `pt`, `eta`, `phi`, and `mass`.
+    This mixin class requires the parent class to provide items ``pt``, ``eta``, ``phi``, and ``mass``.
     Some additional properties are overridden for performance
     """
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using `x`, `y`, `z`, and `t` components
+        """Multiply this vector by a scalar elementwise using ``x``, ``y``, ``z``, and ``t`` components
 
-        In reality, this directly adjusts `pt`, `eta`, `phi` and `mass` for performance
+        In reality, this directly adjusts ``pt``, ``eta``, ``phi`` and ``mass`` for performance
         """
         absother = abs(other)
         return awkward.zip(
@@ -511,15 +622,15 @@ class PtEtaPhiMLorentzVector(LorentzVector):
 class PtEtaPhiELorentzVector(LorentzVector):
     """A Lorentz vector using pseudorapidity and energy
 
-    This mixin class requires the parent class to provide items `pt`, `eta`, `phi`, and `energy`.
+    This mixin class requires the parent class to provide items ``pt``, ``eta``, ``phi``, and ``energy``.
     Some additional properties are overridden for performance
     """
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
-        """Multiply this vector by a scalar elementwise using `x`, `y`, `z`, and `t` components
+        """Multiply this vector by a scalar elementwise using ``x``, ``y``, ``z``, and ``t`` components
 
-        In reality, this directly adjusts `pt`, `eta`, `phi` and `energy` for performance
+        In reality, this directly adjusts ``pt``, ``eta``, ``phi`` and ``energy`` for performance
         """
         return awkward.zip(
             {
@@ -575,36 +686,64 @@ TwoVectorArray.ProjectionClass2D = TwoVectorArray  # noqa: F821
 TwoVectorArray.ProjectionClass3D = ThreeVectorArray  # noqa: F821
 TwoVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 TwoVectorArray.MomentumClass = PolarTwoVectorArray  # noqa: F821
+TwoVectorRecord.ProjectionClass2D = TwoVectorRecord  # noqa: F821
+TwoVectorRecord.ProjectionClass3D = ThreeVectorRecord  # noqa: F821
+TwoVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+TwoVectorRecord.MomentumClass = PolarTwoVectorRecord  # noqa: F821
 
 PolarTwoVectorArray.ProjectionClass2D = PolarTwoVectorArray  # noqa: F821
 PolarTwoVectorArray.ProjectionClass3D = SphericalThreeVectorArray  # noqa: F821
 PolarTwoVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 PolarTwoVectorArray.MomentumClass = PolarTwoVectorArray  # noqa: F821
+PolarTwoVectorRecord.ProjectionClass2D = PolarTwoVectorRecord  # noqa: F821
+PolarTwoVectorRecord.ProjectionClass3D = SphericalThreeVectorRecord  # noqa: F821
+PolarTwoVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+PolarTwoVectorRecord.MomentumClass = PolarTwoVectorRecord  # noqa: F821
 
 ThreeVectorArray.ProjectionClass2D = TwoVectorArray  # noqa: F821
 ThreeVectorArray.ProjectionClass3D = ThreeVectorArray  # noqa: F821
 ThreeVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 ThreeVectorArray.MomentumClass = SphericalThreeVectorArray  # noqa: F821
+ThreeVectorRecord.ProjectionClass2D = TwoVectorRecord  # noqa: F821
+ThreeVectorRecord.ProjectionClass3D = ThreeVectorRecord  # noqa: F821
+ThreeVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+ThreeVectorRecord.MomentumClass = SphericalThreeVectorRecord  # noqa: F821
 
 SphericalThreeVectorArray.ProjectionClass2D = PolarTwoVectorArray  # noqa: F821
 SphericalThreeVectorArray.ProjectionClass3D = SphericalThreeVectorArray  # noqa: F821
 SphericalThreeVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 SphericalThreeVectorArray.MomentumClass = SphericalThreeVectorArray  # noqa: F821
+SphericalThreeVectorRecord.ProjectionClass2D = PolarTwoVectorRecord  # noqa: F821
+SphericalThreeVectorRecord.ProjectionClass3D = SphericalThreeVectorRecord  # noqa: F821
+SphericalThreeVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+SphericalThreeVectorRecord.MomentumClass = SphericalThreeVectorRecord  # noqa: F821
 
 LorentzVectorArray.ProjectionClass2D = TwoVectorArray  # noqa: F821
 LorentzVectorArray.ProjectionClass3D = ThreeVectorArray  # noqa: F821
 LorentzVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 LorentzVectorArray.MomentumClass = LorentzVectorArray  # noqa: F821
+LorentzVectorRecord.ProjectionClass2D = TwoVectorRecord  # noqa: F821
+LorentzVectorRecord.ProjectionClass3D = ThreeVectorRecord  # noqa: F821
+LorentzVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+LorentzVectorRecord.MomentumClass = LorentzVectorRecord  # noqa: F821
 
 PtEtaPhiMLorentzVectorArray.ProjectionClass2D = TwoVectorArray  # noqa: F821
 PtEtaPhiMLorentzVectorArray.ProjectionClass3D = ThreeVectorArray  # noqa: F821
 PtEtaPhiMLorentzVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 PtEtaPhiMLorentzVectorArray.MomentumClass = LorentzVectorArray  # noqa: F821
+PtEtaPhiMLorentzVectorRecord.ProjectionClass2D = TwoVectorRecord  # noqa: F821
+PtEtaPhiMLorentzVectorRecord.ProjectionClass3D = ThreeVectorRecord  # noqa: F821
+PtEtaPhiMLorentzVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+PtEtaPhiMLorentzVectorRecord.MomentumClass = LorentzVectorRecord  # noqa: F821
 
 PtEtaPhiELorentzVectorArray.ProjectionClass2D = TwoVectorArray  # noqa: F821
 PtEtaPhiELorentzVectorArray.ProjectionClass3D = ThreeVectorArray  # noqa: F821
 PtEtaPhiELorentzVectorArray.ProjectionClass4D = LorentzVectorArray  # noqa: F821
 PtEtaPhiELorentzVectorArray.MomentumClass = LorentzVectorArray  # noqa: F821
+PtEtaPhiELorentzVectorRecord.ProjectionClass2D = TwoVectorRecord  # noqa: F821
+PtEtaPhiELorentzVectorRecord.ProjectionClass3D = ThreeVectorRecord  # noqa: F821
+PtEtaPhiELorentzVectorRecord.ProjectionClass4D = LorentzVectorRecord  # noqa: F821
+PtEtaPhiELorentzVectorRecord.MomentumClass = LorentzVectorRecord  # noqa: F821
 
 __all__ = [
     "LorentzVector",
