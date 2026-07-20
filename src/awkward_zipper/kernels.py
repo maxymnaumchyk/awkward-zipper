@@ -359,6 +359,43 @@ def full_like_from_counts(counts, fill_value):
     )
 
 
+def met_to_rho(met_content, eta_content):
+    """Compute ``rho = met * cosh(eta)`` on flat contents, lazily.
+
+    Mirrors coffea's ``met_to_rho`` transform. ``met_content`` and
+    ``eta_content`` are flat ``NumpyArray`` contents; the result is returned as a
+    flat ``NumpyArray`` content and is only evaluated when the buffer is read.
+    """
+
+    def _compute(met, eta):
+        return ensure_array(met) * np.cosh(ensure_array(eta))
+
+    met_data = met_content.data
+    eta_data = eta_content.data
+    is_virtual = awkward._nplikes.virtual.VirtualNDArray
+    met_virtual = isinstance(met_data, is_virtual) and not met_data.is_materialized
+    eta_virtual = isinstance(eta_data, is_virtual) and not eta_data.is_materialized
+
+    if met_virtual or eta_virtual:
+        base = met_data if met_virtual else eta_data
+        result_dtype = np.result_type(met_content.dtype, eta_content.dtype)
+
+        def _materialize(x):
+            return x.materialize() if isinstance(x, is_virtual) else x
+
+        result = awkward._nplikes.virtual.VirtualNDArray(
+            nplike=base._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=result_dtype,
+            generator=lambda: _compute(_materialize(met_data), _materialize(eta_data)),
+            shape_generator=None,
+        )
+    else:
+        result = _compute(met_data, eta_data)
+
+    return awkward.contents.NumpyArray(result)
+
+
 @dispatch_wrap
 @numba.njit
 def _distinct_parent_kernel(allpart_parent, allpart_pdg):

@@ -31,6 +31,12 @@ def _non_materializing_get_field(record, field):
     return awkward.Array(record._contents[index])
 
 
+def _jagged_content(arr):
+    """Flat content of a single-jagged (ListOffsetArray) array, without materializing."""
+    layout = arr.layout if isinstance(arr, awkward.Array) else arr
+    return layout.content
+
+
 def _maybe_raw_generator(buffer):
     if isinstance(buffer, awkward._nplikes.virtual.VirtualNDArray):
         if hasattr(buffer._generator, "__awkward_raw_generator__"):
