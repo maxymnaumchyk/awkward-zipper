@@ -1,7 +1,7 @@
 Quick start
 --------
 
-`NOTE: You can find this whole page as a jupyter notebook and try it out yourself •⩊• here:` ``notebooks/Usage_example_of_awkward_zipper.ipynb`` |br| |br|
+*NOTE: You can find this whole page as a jupyter notebook and try it out yourself •⩊• here:* ``notebooks/Usage_example_of_awkward_zipper.ipynb`` |br| |br|
 Before even starting to work with awkward-zipper we have to use ``uproot`` library to load the data. First we load our root file:
 
 .. code:: bash
@@ -74,7 +74,7 @@ All local indices and their correlating global indices are taken from :class:`aw
 | [[], [9], [], [21, 22]]         |
 +---------------------------------+
 
-Any `nested_items` are constructed, if the necessary branches are available.
+Any ``nested_items`` are constructed, if the necessary branches are available.
 All the input indices are taken from the :class:`awkward_zipper.NanoAOD.nested_items` dictionary.
 
 +---------------------------------+
@@ -158,7 +158,7 @@ From those arrays, NanoAOD collections are formed as collections of branches gro
     | type='40 * var * Jet[area: f...'>                                                                                  |
     +--------------------------------------------------------------------------------------------------------------------+
 
-Collections are assigned mixin types according to the `mixins` :class:`awkward_zipper.NanoAOD.mixins` mapping.
+Collections are assigned mixin types according to the ``mixins`` :class:`awkward_zipper.NanoAOD.mixins` mapping.
 Finally, all collections are then zipped into one `NanoEvents` record and returned.
 
 .. configures inserting |br| in the text to force a new line

@@ -97,7 +97,7 @@ class NanoAOD(BaseLayoutBuilder):
     }
     """Default configuration for mixin types, based on the collection name.
 
-    The types are implemented in the `coffea.nanoevents.methods.nanoaod` module.
+    The types are implemented in the `awkward_zipper.behaviors.nanoaod` module.
     """
     all_cross_references: tp.ClassVar = {
         "Electron_genPartIdx": "GenPart",
