@@ -1,9 +1,11 @@
+from awkward_zipper.layouts.atlas import Ntuple
 from awkward_zipper.layouts.base import BaseLayoutBuilder
 from awkward_zipper.layouts.nanoaod import NanoAOD, PFNanoAOD, ScoutingNanoAOD
 
 __all__ = [
     "BaseLayoutBuilder",
     "NanoAOD",
+    "Ntuple",
     "PFNanoAOD",
     "ScoutingNanoAOD",
 ]

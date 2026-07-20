@@ -359,6 +359,49 @@ def full_like_from_counts(counts, fill_value):
     )
 
 
+def full_like_from_content(content, fill_value, dtype=np.float32):
+    """Create a flat content shaped like ``content`` with every element set to
+    ``fill_value``.
+
+    Mirrors coffea's ``full_like_from_content`` transform. Unlike
+    :func:`full_like_from_counts` this works from an existing flat content, which is
+    what the ATLAS ntuple schema needs: its collections carry their own offsets and
+    there is no ``n{collection}`` counts branch to derive a shape from.
+
+    A jagged source keeps its offsets, so the result lines up element-for-element
+    with the collection it was derived from.
+
+    Stays lazy: when the source buffer is virtual the result is a virtual buffer that
+    only materializes the source to learn how many elements to fill.
+    """
+    layout = awkward.to_layout(content)
+
+    if layout.is_list:
+        return type(layout)(
+            layout.offsets,
+            full_like_from_content(layout.content, fill_value, dtype=dtype),
+        )
+
+    buffer = layout.data
+
+    if isinstance(buffer, awkward._nplikes.virtual.VirtualNDArray):
+        return awkward.contents.NumpyArray(
+            awkward._nplikes.virtual.VirtualNDArray(
+                nplike=buffer._nplike,
+                # reuse the source shape so that consumers never have to materialize
+                # the source just to learn the length
+                shape=buffer.shape,
+                dtype=np.dtype(dtype),
+                generator=lambda: np.full(
+                    len(buffer.materialize()), fill_value, dtype=dtype
+                ),
+                shape_generator=None,
+            )
+        )
+
+    return awkward.contents.NumpyArray(np.full(len(buffer), fill_value, dtype=dtype))
+
+
 @dispatch_wrap
 @numba.njit
 def _distinct_parent_kernel(allpart_parent, allpart_pdg):
