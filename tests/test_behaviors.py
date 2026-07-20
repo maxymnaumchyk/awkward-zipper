@@ -66,8 +66,13 @@ def test_same_class_sum_matches_coffea(name, module, fields):
     )
     zipper = awkward.zip(fields, with_name=name, behavior=module.behavior)
     coffea = awkward.zip(fields, with_name=name, behavior=coffea_methods.behavior)
+    coffea_summed = coffea + coffea
+    if "charge" not in coffea_summed.fields:
+        # coffea older than scikit-hep/coffea#1585 still drops charge here, so it
+        # is not a valid reference for this class until that release lands
+        pytest.skip(f"installed coffea drops charge on {name} + {name} (pre-#1585)")
     assert awkward.array_equal(
-        zipper + zipper, coffea + coffea, check_parameters=False, equal_nan=True
+        zipper + zipper, coffea_summed, check_parameters=False, equal_nan=True
     )
 
 
