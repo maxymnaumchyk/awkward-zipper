@@ -12,19 +12,17 @@ from awkward_zipper.behaviors import vector
 
 behavior = dict(vector.behavior)
 
-behavior.update(awkward._util.copy_behaviors("LorentzVector", "Candidate", behavior))
-
 
 @awkward.mixin_class(behavior)
 class Candidate(vector.LorentzVector):
     """A Lorentz vector with charge
 
-    This mixin class requires the parent class to provide items `x`, `y`, `z`, `t`, and `charge`.
+    This mixin class requires the parent class to provide items ``x``, ``y``, ``z``, ``t``, and ``charge``.
     """
 
     @awkward.mixin_class_method(np.add, {"Candidate"})
     def add(self, other):
-        """Add two candidates together elementwise using `x`, `y`, `z`, `t`, and `charge` components"""
+        """Add two candidates together elementwise using ``x``, ``y``, ``z``, ``t``, and ``charge`` components"""
         return awkward.zip(
             {
                 "x": self.x + other.x,
@@ -38,7 +36,7 @@ class Candidate(vector.LorentzVector):
         )
 
     def sum(self, axis=-1):
-        """Sum an array of vectors elementwise using `x`, `y`, `z`, `t`, and `charge` components"""
+        """Sum an array of vectors elementwise using ``x``, ``y``, ``z``, ``t``, and ``charge`` components"""
         return awkward.zip(
             {
                 "x": awkward.sum(self.x, axis=axis),
@@ -51,12 +49,33 @@ class Candidate(vector.LorentzVector):
             behavior=self.behavior,
         )
 
+    def __awkward_validation__(self):
+        if "charge" not in self.fields:
+            msg = f"{type(self).__name__} requires the 'charge' field"
+            raise ValueError(msg)
+        parent = super()
+        if hasattr(parent, "__awkward_validation__"):
+            parent.__awkward_validation__()
+
+
+# Copy the cross-class LorentzVector behaviors (e.g. Candidate + TwoVector) onto
+# Candidate, but only for keys the ``@mixin_class`` decorator has not already
+# registered. This MUST run after the decorator: ``copy_behaviors`` would
+# otherwise pre-register ``(add, Candidate, Candidate)`` -> LorentzVector.add via
+# the ``setdefault`` used by ``mixin_class``, shadowing Candidate's own
+# charge-propagating ``add`` (see scikit-hep/coffea#1578).
+for _key, _value in awkward._util.copy_behaviors(
+    "LorentzVector", "Candidate", behavior
+).items():
+    behavior.setdefault(_key, _value)
+del _key, _value
+
 
 @awkward.mixin_class(behavior)
 class PtEtaPhiMCandidate(Candidate, vector.PtEtaPhiMLorentzVector):
     """A Lorentz vector in eta, mass coordinates with charge
 
-    This mixin class requires the parent class to provide items `pt`, `eta`, `phi`, `mass`, and `charge`.
+    This mixin class requires the parent class to provide items ``pt``, ``eta``, ``phi``, ``mass``, and ``charge``.
     """
 
 
@@ -64,7 +83,7 @@ class PtEtaPhiMCandidate(Candidate, vector.PtEtaPhiMLorentzVector):
 class PtEtaPhiECandidate(Candidate, vector.PtEtaPhiELorentzVector):
     """A Lorentz vector in eta, energy coordinates with charge
 
-    This mixin class requires the parent class to provide items `pt`, `eta`, `phi`, `energy`, and `charge`.
+    This mixin class requires the parent class to provide items ``pt``, ``eta``, ``phi``, ``energy``, and ``charge``.
     """
 
 
@@ -72,15 +91,27 @@ CandidateArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 CandidateArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 CandidateArray.ProjectionClass4D = vector.LorentzVectorArray  # noqa: F821
 CandidateArray.MomentumClass = CandidateArray  # noqa: F821
+CandidateRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+CandidateRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+CandidateRecord.ProjectionClass4D = vector.LorentzVectorRecord  # noqa: F821
+CandidateRecord.MomentumClass = CandidateRecord  # noqa: F821
 
 PtEtaPhiMCandidateArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 PtEtaPhiMCandidateArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 PtEtaPhiMCandidateArray.ProjectionClass4D = vector.LorentzVectorArray  # noqa: F821
 PtEtaPhiMCandidateArray.MomentumClass = PtEtaPhiMCandidateArray  # noqa: F821
+PtEtaPhiMCandidateRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+PtEtaPhiMCandidateRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+PtEtaPhiMCandidateRecord.ProjectionClass4D = vector.LorentzVectorRecord  # noqa: F821
+PtEtaPhiMCandidateRecord.MomentumClass = PtEtaPhiMCandidateRecord  # noqa: F821
 
 PtEtaPhiECandidateArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 PtEtaPhiECandidateArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 PtEtaPhiECandidateArray.ProjectionClass4D = vector.LorentzVectorArray  # noqa: F821
 PtEtaPhiECandidateArray.MomentumClass = PtEtaPhiECandidateArray  # noqa: F821
+PtEtaPhiECandidateRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+PtEtaPhiECandidateRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+PtEtaPhiECandidateRecord.ProjectionClass4D = vector.LorentzVectorRecord  # noqa: F821
+PtEtaPhiECandidateRecord.MomentumClass = PtEtaPhiECandidateRecord  # noqa: F821
 
 __all__ = ["Candidate", "PtEtaPhiECandidate", "PtEtaPhiMCandidate"]

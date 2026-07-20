@@ -12,6 +12,9 @@ behavior.update(base.behavior)
 # vector behavior is included in candidate behavior
 behavior.update(candidate.behavior)
 
+_VERTEX_REQUIRED = frozenset({"x", "y", "z"})
+_SECONDARY_VERTEX_REQUIRED = frozenset({"pt", "eta", "phi", "mass"})
+
 
 class _NanoAODEvents(behavior["NanoEvents"]):
     def __repr__(self):
@@ -44,6 +47,10 @@ PtEtaPhiMCollectionArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 PtEtaPhiMCollectionArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 PtEtaPhiMCollectionArray.ProjectionClass4D = PtEtaPhiMCollectionArray  # noqa: F821
 PtEtaPhiMCollectionArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+PtEtaPhiMCollectionRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+PtEtaPhiMCollectionRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+PtEtaPhiMCollectionRecord.ProjectionClass4D = PtEtaPhiMCollectionRecord  # noqa: F821
+PtEtaPhiMCollectionRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 
 behavior.update(
@@ -137,7 +144,7 @@ class GenParticle(vector.PtEtaPhiMLorentzVector, base.NanoCollection):
         """
         Accessor to distinct child particles with different PDG id, or last ones in the chain.
         Note that this does not always find the correct children, since this sometimes depends
-        on the MC generator! See `here <https://github.com/scikit-hep/coffea/pull/698>` for more
+        on the MC generator! See `here <https://github.com/scikit-hep/coffea/pull/698>`__ for more
         information.
         """
         warnings.warn(
@@ -153,10 +160,10 @@ GenParticleArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 GenParticleArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 GenParticleArray.ProjectionClass4D = GenParticleArray  # noqa: F821
 GenParticleArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
-
-behavior.update(
-    awkward._util.copy_behaviors("PtEtaPhiMLorentzVector", "GenVisTau", behavior)
-)
+GenParticleRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+GenParticleRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+GenParticleRecord.ProjectionClass4D = GenParticleRecord  # noqa: F821
+GenParticleRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 
 @awkward.mixin_class(behavior)
@@ -169,12 +176,28 @@ class GenVisTau(candidate.PtEtaPhiMCandidate, base.NanoCollection):
         return self._events().GenPart._apply_global_index(self.genPartIdxMotherG)
 
 
+# Fill in cross-class LorentzVector behaviors for GenVisTau without overwriting
+# the charge-propagating Candidate.add the decorator just registered. Running
+# ``copy_behaviors`` before the decorator would pre-seed
+# ``(add, GenVisTau, GenVisTau)`` -> LorentzVector.add and silently drop charge
+# on ``GenVisTau + GenVisTau`` (see scikit-hep/coffea#1578).
+for _key, _value in awkward._util.copy_behaviors(
+    "PtEtaPhiMLorentzVector", "GenVisTau", behavior
+).items():
+    behavior.setdefault(_key, _value)
+del _key, _value
+
+
 _set_repr_name("GenVisTau")
 
 GenVisTauArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 GenVisTauArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 GenVisTauArray.ProjectionClass4D = GenVisTauArray  # noqa: F821
 GenVisTauArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+GenVisTauRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+GenVisTauRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+GenVisTauRecord.ProjectionClass4D = GenVisTauRecord  # noqa: F821
+GenVisTauRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(
     awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Electron", behavior)
@@ -235,6 +258,10 @@ ElectronArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 ElectronArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 ElectronArray.ProjectionClass4D = ElectronArray  # noqa: F821
 ElectronArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+ElectronRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+ElectronRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+ElectronRecord.ProjectionClass4D = ElectronRecord  # noqa: F821
+ElectronRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(
     awkward._util.copy_behaviors("PtEtaPhiMCandidate", "LowPtElectron", behavior)
@@ -264,6 +291,10 @@ LowPtElectronArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 LowPtElectronArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 LowPtElectronArray.ProjectionClass4D = LowPtElectronArray  # noqa: F821
 LowPtElectronArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+LowPtElectronRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+LowPtElectronRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+LowPtElectronRecord.ProjectionClass4D = LowPtElectronRecord  # noqa: F821
+LowPtElectronRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Muon", behavior))
 
@@ -291,6 +322,10 @@ MuonArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 MuonArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 MuonArray.ProjectionClass4D = MuonArray  # noqa: F821
 MuonArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+MuonRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+MuonRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+MuonRecord.ProjectionClass4D = MuonRecord  # noqa: F821
+MuonRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Tau", behavior))
 
@@ -314,6 +349,10 @@ TauArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 TauArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 TauArray.ProjectionClass4D = TauArray  # noqa: F821
 TauArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+TauRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+TauRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+TauRecord.ProjectionClass4D = TauRecord  # noqa: F821
+TauRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Photon", behavior))
 
@@ -330,14 +369,6 @@ class Photon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     "cutBased selection minimum value"
     TIGHT = 3
     "cutBased selection minimum value"
-
-    @property
-    def mass(self):
-        return awkward.zeros_like(self.pt)
-
-    @property
-    def charge(self):
-        return awkward.zeros_like(self.pt)
 
     @property
     def isLoose(self):
@@ -382,6 +413,10 @@ PhotonArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 PhotonArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 PhotonArray.ProjectionClass4D = PhotonArray  # noqa: F821
 PhotonArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+PhotonRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+PhotonRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+PhotonRecord.ProjectionClass4D = PhotonRecord  # noqa: F821
+PhotonRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(
     awkward._util.copy_behaviors("PtEtaPhiMCandidate", "FsrPhoton", behavior)
@@ -403,6 +438,10 @@ FsrPhotonArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 FsrPhotonArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 FsrPhotonArray.ProjectionClass4D = FsrPhotonArray  # noqa: F821
 FsrPhotonArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+FsrPhotonRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+FsrPhotonRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+FsrPhotonRecord.ProjectionClass4D = FsrPhotonRecord  # noqa: F821
+FsrPhotonRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Jet", behavior))
 
@@ -417,10 +456,6 @@ class Jet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     "jetId bit position"
     TIGHTLEPVETO = 2
     "jetId bit position"
-
-    @property
-    def charge(self):
-        return awkward.zeros_like(self.pt)
 
     @property
     def isLoose(self):
@@ -472,6 +507,10 @@ JetArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 JetArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 JetArray.ProjectionClass4D = JetArray  # noqa: F821
 JetArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+JetRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+JetRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+JetRecord.ProjectionClass4D = JetRecord  # noqa: F821
+JetRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "FatJet", behavior))
 
@@ -486,10 +525,6 @@ class FatJet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     "jetId bit position"
     TIGHTLEPVETO = 2
     "jetId bit position"
-
-    @property
-    def charge(self):
-        return awkward.zeros_like(self.pt)
 
     @property
     def isLoose(self):
@@ -526,6 +561,10 @@ FatJetArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 FatJetArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 FatJetArray.ProjectionClass4D = FatJetArray  # noqa: F821
 FatJetArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+FatJetRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+FatJetRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+FatJetRecord.ProjectionClass4D = FatJetRecord  # noqa: F821
+FatJetRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 behavior.update(awkward._util.copy_behaviors("PolarTwoVector", "MissingET", behavior))
 
@@ -534,11 +573,6 @@ behavior.update(awkward._util.copy_behaviors("PolarTwoVector", "MissingET", beha
 class MissingET(vector.PolarTwoVector, base.NanoCollection):
     """NanoAOD Missing transverse energy object"""
 
-    @property
-    def r(self):
-        """Distance from origin in XY plane"""
-        return self["pt"]
-
 
 _set_repr_name("MissingET")
 
@@ -546,6 +580,10 @@ MissingETArray.ProjectionClass2D = MissingETArray  # noqa: F821
 MissingETArray.ProjectionClass3D = vector.SphericalThreeVectorArray  # noqa: F821
 MissingETArray.ProjectionClass4D = vector.LorentzVectorArray  # noqa: F821
 MissingETArray.MomentumClass = MissingETArray  # noqa: F821
+MissingETRecord.ProjectionClass2D = MissingETRecord  # noqa: F821
+MissingETRecord.ProjectionClass3D = vector.SphericalThreeVectorRecord  # noqa: F821
+MissingETRecord.ProjectionClass4D = vector.LorentzVectorRecord  # noqa: F821
+MissingETRecord.MomentumClass = MissingETRecord  # noqa: F821
 
 
 @awkward.mixin_class(behavior)
@@ -564,6 +602,15 @@ class Vertex(base.NanoCollection):
             with_name="ThreeVector",
             behavior=self.behavior,
         )
+
+    def __awkward_validation__(self):
+        missing = _VERTEX_REQUIRED.difference(self.fields)
+        if missing:
+            msg = (
+                f"{type(self).__name__} requires fields {sorted(_VERTEX_REQUIRED)}; "
+                f"missing: {sorted(missing)}"
+            )
+            raise ValueError(msg)
 
 
 _set_repr_name("Vertex")
@@ -586,6 +633,16 @@ class SecondaryVertex(Vertex):
             with_name="PtEtaPhiMLorentzVector",
             behavior=self.behavior,
         )
+
+    def __awkward_validation__(self):
+        missing = _SECONDARY_VERTEX_REQUIRED.difference(self.fields)
+        if missing:
+            msg = (
+                f"{type(self).__name__} requires fields {sorted(_SECONDARY_VERTEX_REQUIRED)} "
+                f"(in addition to x/y/z); missing: {sorted(missing)}"
+            )
+            raise ValueError(msg)
+        super().__awkward_validation__()
 
 
 _set_repr_name("SecondaryVertex")
@@ -649,6 +706,10 @@ PFCandArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
 PFCandArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
 PFCandArray.ProjectionClass4D = PFCandArray  # noqa: F821
 PFCandArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+PFCandRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+PFCandRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+PFCandRecord.ProjectionClass4D = PFCandRecord  # noqa: F821
+PFCandRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
 
 __all__ = [
     "AssociatedPFCand",
