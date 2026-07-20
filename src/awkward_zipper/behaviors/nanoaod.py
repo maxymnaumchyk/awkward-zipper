@@ -12,6 +12,9 @@ behavior.update(base.behavior)
 # vector behavior is included in candidate behavior
 behavior.update(candidate.behavior)
 
+_VERTEX_REQUIRED = frozenset({"x", "y", "z"})
+_SECONDARY_VERTEX_REQUIRED = frozenset({"pt", "eta", "phi", "mass"})
+
 
 class _NanoAODEvents(behavior["NanoEvents"]):
     def __repr__(self):
@@ -332,14 +335,6 @@ class Photon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     "cutBased selection minimum value"
 
     @property
-    def mass(self):
-        return awkward.zeros_like(self.pt)
-
-    @property
-    def charge(self):
-        return awkward.zeros_like(self.pt)
-
-    @property
     def isLoose(self):
         """Returns a boolean array marking loose cut-based photons"""
         # For NanoAOD v9+ the cutBasedBitmap was changed to a cutBased integer
@@ -419,10 +414,6 @@ class Jet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     "jetId bit position"
 
     @property
-    def charge(self):
-        return awkward.zeros_like(self.pt)
-
-    @property
     def isLoose(self):
         """Returns a boolean array marking loose jets according to jetId index"""
         return (self.jetId & (1 << self.LOOSE)) != 0
@@ -488,10 +479,6 @@ class FatJet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     "jetId bit position"
 
     @property
-    def charge(self):
-        return awkward.zeros_like(self.pt)
-
-    @property
     def isLoose(self):
         """Returns a boolean array marking loose jets according to jetId index"""
         return (self.jetId & (1 << self.LOOSE)) != 0
@@ -534,11 +521,6 @@ behavior.update(awkward._util.copy_behaviors("PolarTwoVector", "MissingET", beha
 class MissingET(vector.PolarTwoVector, base.NanoCollection):
     """NanoAOD Missing transverse energy object"""
 
-    @property
-    def r(self):
-        """Distance from origin in XY plane"""
-        return self["pt"]
-
 
 _set_repr_name("MissingET")
 
@@ -565,6 +547,15 @@ class Vertex(base.NanoCollection):
             behavior=self.behavior,
         )
 
+    def __awkward_validation__(self):
+        missing = _VERTEX_REQUIRED.difference(self.fields)
+        if missing:
+            msg = (
+                f"{type(self).__name__} requires fields {sorted(_VERTEX_REQUIRED)}; "
+                f"missing: {sorted(missing)}"
+            )
+            raise ValueError(msg)
+
 
 _set_repr_name("Vertex")
 
@@ -586,6 +577,16 @@ class SecondaryVertex(Vertex):
             with_name="PtEtaPhiMLorentzVector",
             behavior=self.behavior,
         )
+
+    def __awkward_validation__(self):
+        missing = _SECONDARY_VERTEX_REQUIRED.difference(self.fields)
+        if missing:
+            msg = (
+                f"{type(self).__name__} requires fields {sorted(_SECONDARY_VERTEX_REQUIRED)} "
+                f"(in addition to x/y/z); missing: {sorted(missing)}"
+            )
+            raise ValueError(msg)
+        super().__awkward_validation__()
 
 
 _set_repr_name("SecondaryVertex")
