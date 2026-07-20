@@ -1,8 +1,17 @@
 import awkward
+import coffea
+import pytest
 import uproot
 from coffea.nanoevents import NanoEventsFactory, TreeMakerSchema
+from packaging.version import parse as parse_version
 
 from awkward_zipper import TreeMaker
+
+# coffea up to 2026.7.0 truncates TreeMaker subbranch field names to one character
+# (scikit-hep/coffea#1582); awkward-zipper follows the fixed behaviour
+_COFFEA_TRUNCATES_FIELD_NAMES = parse_version(coffea.__version__) <= parse_version(
+    "2026.7.0"
+)
 
 # load a test root file
 file_name = "tests/samples/treemaker.root"
@@ -39,6 +48,10 @@ coffea_events_virtual = NanoEventsFactory.from_root(
 coffea_array_virtual = coffea_events_virtual.events()
 
 
+@pytest.mark.skipif(
+    _COFFEA_TRUNCATES_FIELD_NAMES,
+    reason="installed coffea truncates TreeMaker subbranch field names (pre-#1582)",
+)
 def test_treemaker_whole_eager():
     # awkward-zipper adds some additional parameters, so check_parameters=False
     assert awkward.array_equal(
@@ -46,6 +59,10 @@ def test_treemaker_whole_eager():
     )
 
 
+@pytest.mark.skipif(
+    _COFFEA_TRUNCATES_FIELD_NAMES,
+    reason="installed coffea truncates TreeMaker subbranch field names (pre-#1582)",
+)
 def test_treemaker_whole_virtual():
     assert awkward.array_equal(
         zipper_array_virtual,
