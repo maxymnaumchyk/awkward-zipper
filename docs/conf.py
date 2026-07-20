@@ -35,6 +35,10 @@ extensions = [
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# render single-backtick text as a cross-reference (as coffea's docs do), so
+# `delta_r` in a docstring links to the API entry instead of rendering as italics
+default_role = "any"
+
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
