@@ -1,5 +1,9 @@
 name: Build-sphinx-docs
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -36,5 +40,6 @@ jobs:
         run: |
           make html
       - name: Run ghp-import
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           ghp-import -n -p -f docs/_build/html

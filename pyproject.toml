@@ -27,6 +27,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
@@ -64,10 +66,6 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 strict = false
 ignore_missing_imports = true
 
-[tool.uv]
-# `yarl` (v1.24.0) doesn't support CPython 3.11 (`cp311`) right now
-constraint-dependencies = ["yarl<1.24.0"]
-
 [tool.ruff.lint]
 ignore = [
     "PLR",  # Design related pylint codes
@@ -75,6 +73,8 @@ ignore = [
     # "B006",   # converts default args to 'None'
     "I002",   # isort: "from __future__ import annotations"
     "ISC001", # flake8-implicit-str-concat: Implicit string concatenation"
+    "PLC0415", # `import` should be at the top-level of a file
+    "RUF059",  # Unpacked variable is never used
 ]
 select = [
     "E",
