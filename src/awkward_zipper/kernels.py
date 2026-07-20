@@ -391,7 +391,7 @@ def begin_end_counts(begin_content, end_content):
     """Flat ``end - begin`` counts for EDM4HEP begin/end index ranges (lazy)."""
     return _lazy_flat_content(
         [begin_content.data, end_content.data],
-        lambda b, e: (e.astype(np.int64) - b.astype(np.int64)),
+        lambda b, e: e.astype(np.int64) - b.astype(np.int64),
         np.int64,
     )
 
