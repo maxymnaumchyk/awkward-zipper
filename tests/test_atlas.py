@@ -1,3 +1,4 @@
+import atexit
 import pathlib
 import tempfile
 
@@ -87,9 +88,11 @@ def write_sample(path, tree_name):
         file[tree_name] = branches
 
 
-# generate the test file up front, into a temporary directory so nothing is written
+# generate the test file once, when this module is imported, into a temporary
+# directory that is removed again when the interpreter exits, so nothing is written
 # into the repository
 _tmp_dir = tempfile.TemporaryDirectory()
+atexit.register(_tmp_dir.cleanup)
 file_name = str(pathlib.Path(_tmp_dir.name) / "atlas_ntuple.root")
 tree_name = "analysis"
 write_sample(file_name, tree_name)
