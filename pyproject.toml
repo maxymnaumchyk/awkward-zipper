@@ -13,6 +13,8 @@ dependencies = [
     "awkward >=2.8.8",
     "vector",
     "numba",
+    # particle masses for the ATLAS ntuple schema's synthesized `mass` fields
+    "particle",
 ]
 classifiers = [
     "Development Status :: 1 - Planning",
@@ -43,6 +45,8 @@ dev = [
     "mypy",
     # use a version of coffea where awkward-zipper was not a part of it
     "coffea",
+    # reference implementation for the ATLAS ntuple schema (external to coffea)
+    "atlas-schema",
     # use the version of uproot that supports virtual arrays
     "uproot",
     "requests",
