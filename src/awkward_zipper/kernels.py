@@ -359,73 +359,41 @@ def full_like_from_counts(counts, fill_value):
     )
 
 
-def _lazy_flat_content(datas, fn, dtype):
-    """Apply ``fn`` to flat buffers lazily, returning a ``NumpyArray`` content.
+def met_to_rho(met_content, eta_content):
+    """Compute ``rho = met * cosh(eta)`` on flat contents, lazily.
 
-    Each element of ``datas`` is a raw buffer (numpy array or ``VirtualNDArray``).
-    If any is an unmaterialized virtual buffer the result is a ``VirtualNDArray``
-    whose generator runs ``fn`` on the materialized inputs; otherwise ``fn`` runs
-    eagerly. Used for the PHYSLITE derived columns.
+    Mirrors coffea's ``met_to_rho`` transform. ``met_content`` and
+    ``eta_content`` are flat ``NumpyArray`` contents; the result is returned as a
+    flat ``NumpyArray`` content and is only evaluated when the buffer is read.
     """
+
+    def _compute(met, eta):
+        return ensure_array(met) * np.cosh(ensure_array(eta))
+
+    met_data = met_content.data
+    eta_data = eta_content.data
     is_virtual = awkward._nplikes.virtual.VirtualNDArray
+    met_virtual = isinstance(met_data, is_virtual) and not met_data.is_materialized
+    eta_virtual = isinstance(eta_data, is_virtual) and not eta_data.is_materialized
 
-    def _materialize(x):
-        return x.materialize() if isinstance(x, is_virtual) else x
+    if met_virtual or eta_virtual:
+        base = met_data if met_virtual else eta_data
+        result_dtype = np.result_type(met_content.dtype, eta_content.dtype)
 
-    virtuals = [d for d in datas if isinstance(d, is_virtual) and not d.is_materialized]
-    if virtuals:
-        base = virtuals[0]
+        def _materialize(x):
+            return x.materialize() if isinstance(x, is_virtual) else x
+
         result = awkward._nplikes.virtual.VirtualNDArray(
             nplike=base._nplike,
             shape=(awkward._nplikes.shape.unknown_length,),
-            dtype=dtype,
-            generator=lambda: fn(*(ensure_array(_materialize(d)) for d in datas)),
+            dtype=result_dtype,
+            generator=lambda: _compute(_materialize(met_data), _materialize(eta_data)),
             shape_generator=None,
         )
     else:
-        result = fn(*(ensure_array(d) for d in datas))
+        result = _compute(met_data, eta_data)
+
     return awkward.contents.NumpyArray(result)
-
-
-def qoverp_to_p(qoverp_content):
-    """p = 1 / |qOverP| (cast to the source dtype, matching coffea)."""
-    dtype = qoverp_content.dtype
-    return _lazy_flat_content(
-        [qoverp_content.data],
-        lambda q: (1.0 / np.abs(q)).astype(dtype),
-        dtype,
-    )
-
-
-def qoverp_theta_to_pt(qoverp_content, theta_content):
-    """pt = sin(theta) / |qOverP|."""
-    dtype = qoverp_content.dtype
-    return _lazy_flat_content(
-        [qoverp_content.data, theta_content.data],
-        lambda q, t: (np.sin(t) / np.abs(q)).astype(dtype),
-        dtype,
-    )
-
-
-def full_like_from_content(source_content, fill_value):
-    """A flat content shaped like ``source_content``, filled with ``fill_value``."""
-    dtype = source_content.dtype
-    return _lazy_flat_content(
-        [source_content.data],
-        lambda s: np.full(len(s), fill_value, dtype=dtype),
-        dtype,
-    )
-
-
-def eventindex_content(offsets_index):
-    """Flat int64 content giving each element's event index (from offsets)."""
-
-    def _compute(offsets):
-        offsets = ensure_array(offsets)
-        counts = np.diff(offsets)
-        return np.repeat(np.arange(len(counts), dtype=np.int64), counts)
-
-    return _lazy_flat_content([offsets_index.data], _compute, np.int64)
 
 
 @dispatch_wrap
@@ -791,3 +759,72 @@ def distinct_children_deep(counts, global_parents, global_pdgs):
             out,
         )
     )
+
+
+def _lazy_flat_content(datas, fn, dtype):
+    """Apply ``fn`` to flat buffers lazily, returning a ``NumpyArray`` content.
+
+    Each element of ``datas`` is a raw buffer (numpy array or ``VirtualNDArray``).
+    If any is an unmaterialized virtual buffer the result is a ``VirtualNDArray``
+    whose generator runs ``fn`` on the materialized inputs; otherwise ``fn`` runs
+    eagerly. Used for the PHYSLITE derived columns.
+    """
+    is_virtual = awkward._nplikes.virtual.VirtualNDArray
+
+    def _materialize(x):
+        return x.materialize() if isinstance(x, is_virtual) else x
+
+    virtuals = [d for d in datas if isinstance(d, is_virtual) and not d.is_materialized]
+    if virtuals:
+        base = virtuals[0]
+        result = awkward._nplikes.virtual.VirtualNDArray(
+            nplike=base._nplike,
+            shape=(awkward._nplikes.shape.unknown_length,),
+            dtype=dtype,
+            generator=lambda: fn(*(ensure_array(_materialize(d)) for d in datas)),
+            shape_generator=None,
+        )
+    else:
+        result = fn(*(ensure_array(d) for d in datas))
+    return awkward.contents.NumpyArray(result)
+
+
+def qoverp_to_p(qoverp_content):
+    """p = 1 / |qOverP| (cast to the source dtype, matching coffea)."""
+    dtype = qoverp_content.dtype
+    return _lazy_flat_content(
+        [qoverp_content.data],
+        lambda q: (1.0 / np.abs(q)).astype(dtype),
+        dtype,
+    )
+
+
+def qoverp_theta_to_pt(qoverp_content, theta_content):
+    """pt = sin(theta) / |qOverP|."""
+    dtype = qoverp_content.dtype
+    return _lazy_flat_content(
+        [qoverp_content.data, theta_content.data],
+        lambda q, t: (np.sin(t) / np.abs(q)).astype(dtype),
+        dtype,
+    )
+
+
+def full_like_from_content(source_content, fill_value):
+    """A flat content shaped like ``source_content``, filled with ``fill_value``."""
+    dtype = source_content.dtype
+    return _lazy_flat_content(
+        [source_content.data],
+        lambda s: np.full(len(s), fill_value, dtype=dtype),
+        dtype,
+    )
+
+
+def eventindex_content(offsets_index):
+    """Flat int64 content giving each element's event index (from offsets)."""
+
+    def _compute(offsets):
+        offsets = ensure_array(offsets)
+        counts = np.diff(offsets)
+        return np.repeat(np.arange(len(counts), dtype=np.int64), counts)
+
+    return _lazy_flat_content([offsets_index.data], _compute, np.int64)
