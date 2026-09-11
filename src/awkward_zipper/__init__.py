@@ -1,9 +1,11 @@
 from awkward_zipper.layouts.base import BaseLayoutBuilder
+from awkward_zipper.layouts.delphes import Delphes
 from awkward_zipper.layouts.nanoaod import NanoAOD, PFNanoAOD, ScoutingNanoAOD
 from awkward_zipper.layouts.treemaker import TreeMaker
 
 __all__ = [
     "BaseLayoutBuilder",
+    "Delphes",
     "NanoAOD",
     "PFNanoAOD",
     "ScoutingNanoAOD",
