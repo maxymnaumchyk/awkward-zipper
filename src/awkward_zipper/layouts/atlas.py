@@ -12,7 +12,7 @@ from awkward_zipper.awkward_util import (
     _non_materializing_get_field,
     _rewrap,
 )
-from awkward_zipper.kernels import full_like_from_content
+from awkward_zipper.kernels import full_like_from_array
 from awkward_zipper.layouts.base import BaseLayoutBuilder
 
 
@@ -134,7 +134,7 @@ class Ntuple(BaseLayoutBuilder):
                     stacklevel=2,
                 )
                 continue
-            collection_content[new_field] = full_like_from_content(
+            collection_content[new_field] = full_like_from_array(
                 collection_content[source_field], fill_value
             )
         for new_field, old_field in self.rename_items.get(behavior_name, {}).items():
