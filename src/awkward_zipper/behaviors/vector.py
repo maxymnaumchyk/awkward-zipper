@@ -43,6 +43,7 @@ A small example::
 
 """
 
+import functools
 import numbers
 
 import awkward
@@ -119,7 +120,9 @@ _ALIAS_GROUPS = {
 }
 
 
+@functools.lru_cache(maxsize=4096)
 def _coordinate_validation(fields):
+    fields = set(fields)
     errors = []
     for label, aliases in _ALIAS_GROUPS.items():
         overlap = fields & aliases
@@ -153,12 +156,22 @@ def _coordinate_validation(fields):
             + ", ".join(present_longitudinal)
         )
     return (
-        errors,
+        tuple(errors),
         has_xy,
         has_rhophi,
         has_z or has_theta or has_eta,
         bool(fields & _TEMPORAL),
     )
+
+
+# awkward looks up reducer overloads by record name only, so the ones vector
+# registers for Momentum{2,3,4}D never reach our collections. Forward those that
+# don't rebuild a record. Sum has to go through our own, which keeps the charge
+# field and names the result after what it actually built.
+_count_reducer = vector.backends.awkward.behavior[awkward.count, "Momentum4D"]
+_count_nonzero_reducer = vector.backends.awkward.behavior[
+    awkward.count_nonzero, "Momentum4D"
+]
 
 
 @awkward.mixin_class(behavior)
@@ -208,6 +221,18 @@ class TwoVector(MomentumAwkward2D):
             behavior=self.behavior,
         )
 
+    @awkward.mixin_class_method(awkward.sum)
+    def _reduce_sum(self, mask_identity):
+        return self.sum(axis=1)
+
+    @awkward.mixin_class_method(awkward.count)
+    def _reduce_count(self, mask_identity):
+        return _count_reducer(self, mask_identity)
+
+    @awkward.mixin_class_method(awkward.count_nonzero)
+    def _reduce_count_nonzero(self, mask_identity):
+        return _count_nonzero_reducer(self, mask_identity)
+
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
         """Multiply this vector by a scalar elementwise using ``x`` and ``y`` components"""
@@ -227,16 +252,11 @@ class TwoVector(MomentumAwkward2D):
         """
         return self.deltaphi(other)
 
-    @property
-    def unit(self):
-        """Unit vector, a vector of length 1 pointing in the same direction"""
-        return self / self.r
-
     def __awkward_validation__(self):
-        fields = set(self.fields)
         errors, has_cart, has_polar, has_longitudinal, has_temporal = (
-            _coordinate_validation(fields)
+            _coordinate_validation(tuple(self.fields))
         )
+        errors = list(errors)
         if not (has_cart or has_polar):
             errors.append(
                 "missing azimuthal coordinates: need x/px and y/py, or rho/pt and phi"
@@ -323,6 +343,18 @@ class ThreeVector(MomentumAwkward3D):
             behavior=self.behavior,
         )
 
+    @awkward.mixin_class_method(awkward.sum)
+    def _reduce_sum(self, mask_identity):
+        return self.sum(axis=1)
+
+    @awkward.mixin_class_method(awkward.count)
+    def _reduce_count(self, mask_identity):
+        return _count_reducer(self, mask_identity)
+
+    @awkward.mixin_class_method(awkward.count_nonzero)
+    def _reduce_count_nonzero(self, mask_identity):
+        return _count_nonzero_reducer(self, mask_identity)
+
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
         """Multiply this vector by a scalar elementwise using ``x``, ``y``, and ``z`` components"""
@@ -335,16 +367,11 @@ class ThreeVector(MomentumAwkward3D):
         """
         return self.deltaphi(other)
 
-    @property
-    def unit(self):
-        """Unit vector, a vector of length 1 pointing in the same direction"""
-        return self / self.rho
-
     def __awkward_validation__(self):
-        fields = set(self.fields)
         errors, has_cart, has_polar, has_longitudinal, has_temporal = (
-            _coordinate_validation(fields)
+            _coordinate_validation(tuple(self.fields))
         )
+        errors = list(errors)
         if not (has_cart or has_polar):
             errors.append(
                 "missing azimuthal coordinates: need x/px and y/py, or rho/pt and phi"
@@ -440,6 +467,18 @@ class LorentzVector(MomentumAwkward4D):
             with_name="LorentzVector",
             behavior=self.behavior,
         )
+
+    @awkward.mixin_class_method(awkward.sum)
+    def _reduce_sum(self, mask_identity):
+        return self.sum(axis=1)
+
+    @awkward.mixin_class_method(awkward.count)
+    def _reduce_count(self, mask_identity):
+        return _count_reducer(self, mask_identity)
+
+    @awkward.mixin_class_method(awkward.count_nonzero)
+    def _reduce_count_nonzero(self, mask_identity):
+        return _count_nonzero_reducer(self, mask_identity)
 
     @awkward.mixin_class_method(np.multiply, {numbers.Number})
     def multiply(self, other):
@@ -553,10 +592,10 @@ class LorentzVector(MomentumAwkward4D):
         return _nearest_core(self, other, axis, metric, return_metric, threshold)
 
     def __awkward_validation__(self):
-        fields = set(self.fields)
         errors, has_cart, has_polar, has_longitudinal, has_temporal = (
-            _coordinate_validation(fields)
+            _coordinate_validation(tuple(self.fields))
         )
+        errors = list(errors)
         if not (has_cart or has_polar):
             errors.append(
                 "missing azimuthal coordinates: need x/px and y/py, or rho/pt and phi"
@@ -583,33 +622,37 @@ class PtEtaPhiMLorentzVector(LorentzVector):
     def multiply(self, other):
         """Multiply this vector by a scalar elementwise using ``x``, ``y``, ``z``, and ``t`` components
 
-        In reality, this directly adjusts ``pt``, ``eta``, ``phi`` and ``mass`` for performance
+        For a non-negative scalar this directly adjusts ``pt``, ``eta``, ``phi`` and ``mass``
+        for performance and returns a `PtEtaPhiMLorentzVector`. Any other multiplier
+        (negative, or an array whose sign is not known ahead of time) returns a cartesian
+        `LorentzVector`, since (pt, eta, phi, mass) cannot represent ``t < 0``.
         """
-        absother = abs(other)
+        if isinstance(other, numbers.Real) and other >= 0:
+            return awkward.zip(
+                {
+                    "pt": self.pt * other,
+                    "eta": self.eta,
+                    "phi": self.phi,
+                    "mass": self.mass * other,
+                },
+                with_name="PtEtaPhiMLorentzVector",
+                behavior=self.behavior,
+            )
         return awkward.zip(
             {
-                "pt": self.pt * absother,
-                "eta": self.eta * np.sign(other),
-                "phi": self.phi % (2 * np.pi) - (np.pi * (other < 0)),
-                "mass": self.mass * absother,
+                "x": self.x * other,
+                "y": self.y * other,
+                "z": self.z * other,
+                "t": self.t * other,
             },
-            with_name="PtEtaPhiMLorentzVector",
+            with_name="LorentzVector",
             behavior=self.behavior,
         )
 
     @awkward.mixin_class_method(np.negative)
     def negative(self):
         """Returns the negative of the vector"""
-        return awkward.zip(
-            {
-                "pt": self.pt,
-                "eta": -self.eta,
-                "phi": self.phi % (2 * np.pi) - np.pi,
-                "mass": self.mass,
-            },
-            with_name="PtEtaPhiMLorentzVector",
-            behavior=self.behavior,
-        )
+        return self.multiply(-1)
 
     @awkward.mixin_class_method(np.divide, {numbers.Number})
     def divide(self, other):
