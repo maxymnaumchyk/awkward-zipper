@@ -126,6 +126,10 @@ def _collection_fields(form):
     }
 
 
+@pytest.mark.skipif(
+    _COFFEA_TRUNCATES_FIELD_NAMES,
+    reason="installed coffea truncates TreeMaker subbranch field names (pre-#1582)",
+)
 def test_field_order():
     # array_equal matches record fields by name; the layouts must also list them
     # in the same order as coffea
