@@ -1,27 +1,15 @@
 import typing as tp
 
 import awkward
-import numpy as np
 
 from awkward_zipper.awkward_util import (
     _jagged_content,
     _non_materializing_get_field,
     _rewrap,
+    _total_items,
 )
 from awkward_zipper.kernels import counts2offsets, full_like_from_counts, met_to_rho
 from awkward_zipper.layouts.base import BaseLayoutBuilder
-
-
-def _total_items(offsets):
-    """Number of flat items implied by an offsets array (``offsets[-1]``).
-
-    Returns an unknown length when the offsets are virtual, so that reading it
-    does not materialize the counts branch.
-    """
-    if isinstance(offsets, np.ndarray):
-        return int(offsets[-1])
-    return awkward._nplikes.shape.unknown_length
-
 
 _LIST_LIKE = (
     awkward.contents.ListOffsetArray,
