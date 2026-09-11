@@ -50,6 +50,14 @@ awkward\_zipper.behaviors.edm4hep
    :show-inheritance:
    :undoc-members:
 
+awkward\_zipper.behaviors.fcc
+-----------------------------------------
+
+.. automodule:: awkward_zipper.behaviors.fcc
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 awkward\_zipper.behaviors.nanoaod
 ---------------------------------------------
 

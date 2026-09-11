@@ -34,6 +34,14 @@ awkward\_zipper.layouts.edm4hep
    :show-inheritance:
    :undoc-members:
 
+awkward\_zipper.layouts.fcc
+---------------------------------------
+
+.. automodule:: awkward_zipper.layouts.fcc
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 awkward\_zipper.layouts.nanoaod
 -------------------------------------------
 
