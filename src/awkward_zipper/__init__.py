@@ -7,7 +7,14 @@ from awkward_zipper.layouts.edm4hep import (
     EDM4HEP_v00_10_04,
     EDM4HEP_v00_10_05,
     EDM4HEP_v00_99_00,
+    EDM4HEP_v00_99_01,
+    EDM4HEP_v00_99_02,
+    EDM4HEP_v00_99_03,
+    EDM4HEP_v00_99_04,
+    EDM4HEP_v01_00,
+    EDM4HEP_v01_01,
     edm4hep_version,
+    podio_collection_types,
 )
 from awkward_zipper.layouts.fcc import FCC, FCCSchema, FCCSchema_edm4hep1
 from awkward_zipper.layouts.nanoaod import NanoAOD, PFNanoAOD, ScoutingNanoAOD
@@ -22,12 +29,19 @@ __all__ = [
     "EDM4HEP_v00_10_04",
     "EDM4HEP_v00_10_05",
     "EDM4HEP_v00_99_00",
+    "EDM4HEP_v00_99_01",
+    "EDM4HEP_v00_99_02",
+    "EDM4HEP_v00_99_03",
+    "EDM4HEP_v00_99_04",
+    "EDM4HEP_v01_00",
+    "EDM4HEP_v01_01",
     "FCCSchema",
     "FCCSchema_edm4hep1",
     "NanoAOD",
     "PFNanoAOD",
     "ScoutingNanoAOD",
     "edm4hep_version",
+    "podio_collection_types",
 ]
 
 
