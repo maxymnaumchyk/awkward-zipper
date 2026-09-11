@@ -184,6 +184,11 @@ class Delphes(BaseLayoutBuilder):
     def __init__(self, version="latest"):
         self._version = version
 
+    @classmethod
+    def v1(cls):
+        """Build the DelphesEvents for version 1 (``DelphesSchema.v1`` in coffea)"""
+        return cls(version="1")
+
     def __call__(self, array: awkward.Array) -> awkward.Array:
         fields = list(array.fields)
         n_events = int(awkward.num(array, axis=0))
