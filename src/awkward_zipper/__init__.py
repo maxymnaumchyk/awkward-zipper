@@ -1,4 +1,6 @@
+from awkward_zipper.layouts.atlas import Ntuple
 from awkward_zipper.layouts.base import BaseLayoutBuilder
+from awkward_zipper.layouts.delphes import Delphes
 from awkward_zipper.layouts.edm4hep import (
     EDM4HEP,
     EDM4HEP_v00_10_01,
@@ -17,10 +19,16 @@ from awkward_zipper.layouts.edm4hep import (
     podio_collection_types,
 )
 from awkward_zipper.layouts.nanoaod import NanoAOD, PFNanoAOD, ScoutingNanoAOD
+from awkward_zipper.layouts.pdune import PDUNE
+from awkward_zipper.layouts.physlite import PHYSLITE
+from awkward_zipper.layouts.treemaker import TreeMaker
 
 __all__ = [
     "EDM4HEP",
+    "PDUNE",
+    "PHYSLITE",
     "BaseLayoutBuilder",
+    "Delphes",
     "EDM4HEP_v00_10_01",
     "EDM4HEP_v00_10_02",
     "EDM4HEP_v00_10_03",
@@ -34,8 +42,10 @@ __all__ = [
     "EDM4HEP_v01_00",
     "EDM4HEP_v01_01",
     "NanoAOD",
+    "Ntuple",
     "PFNanoAOD",
     "ScoutingNanoAOD",
+    "TreeMaker",
     "edm4hep_version",
     "podio_collection_types",
 ]

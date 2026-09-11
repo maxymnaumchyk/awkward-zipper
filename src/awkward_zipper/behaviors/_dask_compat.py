@@ -36,6 +36,20 @@ def dask_property(maybe_func=None, *, no_dispatch=False):
     return wrapper(maybe_func)
 
 
+def _isinstance(arg: Any, *class_prefixes: str) -> bool:
+    """Return True if arg is an instance of a class with any given prefix."""
+    for cls in type(arg).__mro__:
+        class_name = f"{cls.__module__}.{cls.__qualname__}"
+        if any(class_name.startswith(prefix) for prefix in class_prefixes):
+            return True
+    return False
+
+
+def _import_dask_awkward():
+    msg = "dask mode is not supported by awkward-zipper (eager/virtual only)"
+    raise ModuleNotFoundError(msg)
+
+
 class _DaskMethod:
     def __init__(self, impl):
         self._impl = impl
@@ -57,17 +71,3 @@ def dask_method(maybe_func=None, *, no_dispatch=False):
     if maybe_func is None:
         return wrapper
     return wrapper(maybe_func)
-
-
-def _isinstance(arg: Any, *class_prefixes: str) -> bool:
-    """Return True if arg is an instance of a class with any given prefix."""
-    for cls in type(arg).__mro__:
-        class_name = f"{cls.__module__}.{cls.__qualname__}"
-        if any(class_name.startswith(prefix) for prefix in class_prefixes):
-            return True
-    return False
-
-
-def _import_dask_awkward():
-    msg = "dask mode is not supported by awkward-zipper (eager/virtual only)"
-    raise ModuleNotFoundError(msg)

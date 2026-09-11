@@ -1,0 +1,312 @@
+"""Mixins for the Delphes schema
+
+See https://delphes.github.io/workbook/root-tree-description/ for details.
+"""
+
+import awkward
+
+from awkward_zipper.behaviors import base, candidate, vector
+
+behavior = {}
+behavior.update(base.behavior)
+# vector behavior is included in candidate behavior
+behavior.update(candidate.behavior)
+
+
+class DelphesEvents(behavior["NanoEvents"]):
+    def __repr__(self):
+        return f"<Delphes event {self.Event.Number}>"
+
+
+behavior["NanoEvents"] = DelphesEvents
+
+
+def _set_repr_name(classname):
+    def namefcn(self):
+        return classname
+
+    behavior[("__typestr__", classname)] = classname[0].lower() + classname[1:]
+    behavior[classname].__repr__ = namefcn
+
+
+@awkward.mixin_class(behavior)
+class Event: ...
+
+
+_set_repr_name("Event")
+
+
+@awkward.mixin_class(behavior)
+class LHEFEvent(Event): ...
+
+
+_set_repr_name("LHEFEvent")
+
+
+@awkward.mixin_class(behavior)
+class HepMCEvent(Event): ...
+
+
+_set_repr_name("HepMCEvent")
+
+
+@awkward.mixin_class(behavior)
+class LHCOEvent(Event): ...
+
+
+_set_repr_name("LHCOEvent")
+
+
+@awkward.mixin_class(behavior)
+class Weight(base.NanoCollection): ...
+
+
+_set_repr_name("Weight")
+
+
+@awkward.mixin_class(behavior)
+class WeightLHEF(Event): ...
+
+
+_set_repr_name("WeightLHEF")
+
+
+@awkward.mixin_class(behavior)
+class Rho(base.NanoCollection): ...
+
+
+_set_repr_name("Rho")
+
+
+@awkward.mixin_class(behavior)
+class ScalarHT(base.NanoCollection): ...
+
+
+_set_repr_name("ScalarHT")
+
+
+behavior.update(
+    awkward._util.copy_behaviors("SphericalThreeVector", "MissingET", behavior)
+)
+
+
+@awkward.mixin_class(behavior)
+class MissingET(vector.SphericalThreeVector, base.NanoCollection): ...
+
+
+_set_repr_name("MissingET")
+
+
+MissingETArray.ProjectionClass2D = vector.PolarTwoVectorArray  # noqa: F821
+MissingETArray.ProjectionClass3D = MissingETArray  # noqa: F821
+MissingETArray.ProjectionClass4D = vector.LorentzVectorArray  # noqa: F821
+MissingETArray.MomentumClass = MissingETArray  # noqa: F821
+MissingETRecord.ProjectionClass2D = vector.PolarTwoVectorRecord  # noqa: F821
+MissingETRecord.ProjectionClass3D = MissingETRecord  # noqa: F821
+MissingETRecord.ProjectionClass4D = vector.LorentzVectorRecord  # noqa: F821
+MissingETRecord.MomentumClass = MissingETRecord  # noqa: F821
+
+
+behavior.update(awkward._util.copy_behaviors("LorentzVector", "Vertex", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Vertex(vector.LorentzVector):
+    """Generic vertex collection that has Lorentz vector properties"""
+
+
+_set_repr_name("Vertex")
+
+VertexArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+VertexArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+VertexArray.ProjectionClass4D = VertexArray  # noqa: F821
+VertexArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+VertexRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+VertexRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+VertexRecord.ProjectionClass4D = VertexRecord  # noqa: F821
+VertexRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(
+    awkward._util.copy_behaviors("PtEtaPhiMLorentzVector", "Particle", behavior)
+)
+
+
+@awkward.mixin_class(behavior)
+class Particle(vector.PtEtaPhiMLorentzVector):
+    """Generic particle collection that has Lorentz vector properties
+
+    The following branches are not used:
+
+     - E: particle energy
+     - Px: particle momentum vector (x component)
+     - Py: particle momentum vector (y component)
+     - Pz: particle momentum vector (z component)
+
+     - P: particle momentum
+     - Rapidity: particle rapidity
+
+     - T: particle vertex position (t component)
+     - X: particle vertex position (x component)
+     - Y: particle vertex position (y component)
+     - Z: particle vertex position (z component)
+    """
+
+
+_set_repr_name("Particle")
+
+ParticleArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+ParticleArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+ParticleArray.ProjectionClass4D = ParticleArray  # noqa: F821
+ParticleArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+ParticleRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+ParticleRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+ParticleRecord.ProjectionClass4D = ParticleRecord  # noqa: F821
+ParticleRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("Particle", "MasslessParticle", behavior))
+
+
+@awkward.mixin_class(behavior)
+class MasslessParticle(Particle, base.NanoCollection): ...
+
+
+_set_repr_name("MasslessParticle")
+
+MasslessParticleArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+MasslessParticleArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+MasslessParticleArray.ProjectionClass4D = MasslessParticleArray  # noqa: F821
+MasslessParticleArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+MasslessParticleRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+MasslessParticleRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+MasslessParticleRecord.ProjectionClass4D = MasslessParticleRecord  # noqa: F821
+MasslessParticleRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("MasslessParticle", "Photon", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Photon(MasslessParticle, base.NanoCollection): ...
+
+
+_set_repr_name("Photon")
+
+PhotonArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+PhotonArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+PhotonArray.ProjectionClass4D = PhotonArray  # noqa: F821
+PhotonArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+PhotonRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+PhotonRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+PhotonRecord.ProjectionClass4D = PhotonRecord  # noqa: F821
+PhotonRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("MasslessParticle", "Electron", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Electron(MasslessParticle, base.NanoCollection): ...
+
+
+_set_repr_name("Electron")
+
+ElectronArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+ElectronArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+ElectronArray.ProjectionClass4D = ElectronArray  # noqa: F821
+ElectronArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+ElectronRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+ElectronRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+ElectronRecord.ProjectionClass4D = ElectronRecord  # noqa: F821
+ElectronRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("MasslessParticle", "Muon", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Muon(MasslessParticle, base.NanoCollection): ...
+
+
+_set_repr_name("Muon")
+
+MuonArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+MuonArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+MuonArray.ProjectionClass4D = MuonArray  # noqa: F821
+MuonArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+MuonRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+MuonRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+MuonRecord.ProjectionClass4D = MuonRecord  # noqa: F821
+MuonRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("Particle", "Jet", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Jet(Particle, base.NanoCollection): ...
+
+
+_set_repr_name("Jet")
+
+JetArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+JetArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+JetArray.ProjectionClass4D = JetArray  # noqa: F821
+JetArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+JetRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+JetRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+JetRecord.ProjectionClass4D = JetRecord  # noqa: F821
+JetRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("Particle", "Track", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Track(Particle, base.NanoCollection): ...
+
+
+_set_repr_name("Track")
+
+TrackArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+TrackArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+TrackArray.ProjectionClass4D = TrackArray  # noqa: F821
+TrackArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+TrackRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+TrackRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+TrackRecord.ProjectionClass4D = TrackRecord  # noqa: F821
+TrackRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+behavior.update(awkward._util.copy_behaviors("MasslessParticle", "Tower", behavior))
+
+
+@awkward.mixin_class(behavior)
+class Tower(MasslessParticle, base.NanoCollection): ...
+
+
+_set_repr_name("Tower")
+
+TowerArray.ProjectionClass2D = vector.TwoVectorArray  # noqa: F821
+TowerArray.ProjectionClass3D = vector.ThreeVectorArray  # noqa: F821
+TowerArray.ProjectionClass4D = TowerArray  # noqa: F821
+TowerArray.MomentumClass = vector.LorentzVectorArray  # noqa: F821
+TowerRecord.ProjectionClass2D = vector.TwoVectorRecord  # noqa: F821
+TowerRecord.ProjectionClass3D = vector.ThreeVectorRecord  # noqa: F821
+TowerRecord.ProjectionClass4D = TowerRecord  # noqa: F821
+TowerRecord.MomentumClass = vector.LorentzVectorRecord  # noqa: F821
+
+
+__all__ = [
+    "DelphesEvents",
+    "Electron",
+    "Event",
+    "HepMCEvent",
+    "Jet",
+    "LHCOEvent",
+    "LHEFEvent",
+    "MissingET",
+    "Muon",
+    "Particle",
+    "Photon",
+    "Rho",
+    "ScalarHT",
+    "Tower",
+    "Track",
+    "Vertex",
+    "Weight",
+    "WeightLHEF",
+]
