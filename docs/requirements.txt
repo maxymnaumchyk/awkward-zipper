@@ -5,6 +5,8 @@ pre_commit
 mypy
 # use a version of coffea where awkward-zipper was not a part of it
 coffea==2025.7.0
+# runtime dependency of the ATLAS ntuple layout (particle masses)
+particle
 uproot
 requests
 aiohttp
