@@ -152,3 +152,17 @@ def _zip_arrays(members, record_name=None):
     return awkward.contents.RecordArray(
         layouts, names, length=length, parameters=params
     )
+
+
+def _total_items(offsets):
+    """Number of flat items implied by an offsets array (``offsets[-1]``).
+
+    Returns an unknown length when the offsets are virtual, so reading it does
+    not materialize the counts.
+    """
+    import numpy as np
+
+    data = offsets.data if isinstance(offsets, awkward.index.Index) else offsets
+    if isinstance(data, np.ndarray):
+        return int(data[-1])
+    return awkward._nplikes.shape.unknown_length
