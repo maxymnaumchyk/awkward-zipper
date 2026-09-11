@@ -175,26 +175,33 @@ class Ntuple(BaseLayoutBuilder):
         ]
         fields = list(collection_content)
 
-        parameters = {
-            "__record__": behavior_name,
-            "collection_name": collection_name,
-        }
-
-        if all(content.is_list for content in contents):
+        # like atlas-schema's zip_forms: only ListOffsetArray fields form a jagged
+        # collection, and its ``collection_name`` sits on the outer list node
+        if all(
+            isinstance(content, awkward.contents.ListOffsetArray)
+            for content in contents
+        ):
             inner = tuple(content.content for content in contents)
             record = awkward.contents.RecordArray(
                 inner,
                 fields,
                 length=_check_equal_lengths(inner),
-                parameters=parameters,
+                parameters={"__record__": behavior_name},
             )
-            return awkward.contents.ListOffsetArray(contents[0].offsets, record)
+            return awkward.contents.ListOffsetArray(
+                contents[0].offsets,
+                record,
+                parameters={"collection_name": collection_name},
+            )
 
         return awkward.contents.RecordArray(
             tuple(contents),
             fields,
             length=_check_equal_lengths(tuple(contents)),
-            parameters=parameters,
+            parameters={
+                "__record__": behavior_name,
+                "collection_name": collection_name,
+            },
         )
 
     def _collection_behavior(self, collection_name, warn):
