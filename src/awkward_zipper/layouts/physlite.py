@@ -5,6 +5,7 @@ from collections import defaultdict
 import awkward
 
 from awkward_zipper.awkward_util import (
+    _check_equal_lengths,
     _jagged_content,
     _non_materializing_get_field,
     _rewrap,
@@ -18,11 +19,31 @@ from awkward_zipper.kernels import (
 )
 from awkward_zipper.layouts.base import BaseLayoutBuilder
 
-_LIST_LIKE = (
-    awkward.contents.ListOffsetArray,
-    awkward.contents.ListArray,
-    awkward.contents.RegularArray,
-)
+# coffea's "List" form-class check: a list of fixed-size arrays (RegularArray)
+# still counts as single-jagged, a list of lists does not
+_LIST_CLASSES = (awkward.contents.ListOffsetArray, awkward.contents.ListArray)
+
+
+def _zip_leaves(members):
+    """Zip leaf layouts into one record (coffea's ``zip_forms``).
+
+    Jagged leaves share the offsets of the first one; anything else is zipped
+    into a flat per-event record.
+    """
+    layouts = list(members.values())
+    if all(isinstance(layout, awkward.contents.ListOffsetArray) for layout in layouts):
+        offsets = layouts[0].offsets
+        return awkward.contents.ListOffsetArray(
+            offsets,
+            awkward.contents.RecordArray(
+                [_jagged_content(layout) for layout in layouts],
+                list(members.keys()),
+                length=_total_items(offsets),
+            ),
+        )
+    return awkward.contents.RecordArray(
+        layouts, list(members.keys()), length=_check_equal_lengths(layouts)
+    )
 
 
 class PHYSLITE(BaseLayoutBuilder):
@@ -87,7 +108,7 @@ class PHYSLITE(BaseLayoutBuilder):
             if (
                 not has_eventindex[objname]
                 and isinstance(layout, awkward.contents.ListOffsetArray)
-                and not isinstance(layout.content, _LIST_LIKE)
+                and not isinstance(layout.content, _LIST_CLASSES)
             ):
                 ev = awkward.contents.ListOffsetArray(
                     layout.offsets, eventindex_content(layout.offsets)
@@ -101,28 +122,18 @@ class PHYSLITE(BaseLayoutBuilder):
                 contents[objname] = items[0][1]
                 continue
 
-            present = {sk for sk, _ in items}
-
             # reconstitute split ElementLink parents (e.g. ambiguityLink from
-            # ambiguityLink.m_persKey / ambiguityLink.m_persIndex)
+            # ambiguityLink.m_persKey / ambiguityLink.m_persIndex); like coffea this
+            # is done unconditionally and the result replaces a same-named field
             to_collect = defaultdict(list)
             for sk, layout in items:
                 if "." in sk:
                     skleft, skright = sk.split(".", 1)
-                    if skleft not in present:
-                        to_collect[skleft].append((skright, layout))
-            reconstituted = {}
-            for skleft, leaves in to_collect.items():
-                offsets = leaves[0][1].offsets
-                members = {sr: _jagged_content(lay) for sr, lay in leaves}
-                reconstituted[skleft] = awkward.contents.ListOffsetArray(
-                    offsets,
-                    awkward.contents.RecordArray(
-                        list(members.values()),
-                        list(members.keys()),
-                        length=_total_items(offsets),
-                    ),
-                )
+                    to_collect[skleft].append((skright, layout))
+            reconstituted = {
+                skleft: _zip_leaves(dict(leaves))
+                for skleft, leaves in to_collect.items()
+            }
 
             # build the mapping of fields to zip (all share the collection offsets)
             to_zip = {}
@@ -133,15 +144,9 @@ class PHYSLITE(BaseLayoutBuilder):
                 if isinstance(layout, awkward.contents.RecordArray) and layout.fields:
                     # single-jagged ElementLink stored as RecordArray(ListOffsetArray):
                     # convert to ListOffsetArray(RecordArray)
-                    offsets = layout.contents[0].offsets
                     fields = [f.split(".")[-1] for f in layout.fields]
-                    field_layout = awkward.contents.ListOffsetArray(
-                        offsets,
-                        awkward.contents.RecordArray(
-                            [c.content for c in layout.contents],
-                            fields,
-                            length=_total_items(offsets),
-                        ),
+                    field_layout = _zip_leaves(
+                        dict(zip(fields, layout.contents, strict=True))
                     )
                 to_zip[sk] = field_layout
             to_zip.update(reconstituted)
