@@ -122,10 +122,9 @@ def _build(file_name, ver, filter_name):
 _cache = {}
 
 
-# samples whose coffea reference needs the newer coffea
-NEW_COFFEA_SAMPLES = {
-    name for name, (_, ver, _) in SAMPLES.items() if ver != "00.99.01"
-}
+# samples whose coffea reference needs the newer coffea: everything but the WW sample
+# at 00.99.01 (coffea 2026.7.0's output for the key4hep sample differs, see #1633)
+NEW_COFFEA_SAMPLES = set(SAMPLES) - {"p8_ee_WW"}
 
 
 def _built(sample):
