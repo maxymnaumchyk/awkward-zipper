@@ -4,6 +4,7 @@ import types
 import typing as tp
 
 import awkward
+import coffea
 import numpy as np
 import pytest
 import uproot
@@ -11,18 +12,28 @@ from coffea.nanoevents import EDM4HEPSchema, NanoEventsFactory
 from coffea.nanoevents.assets import edm4hep_ver as coffea_edm4hep_ver
 from coffea.nanoevents.assets import versions as coffea_versions
 from coffea.nanoevents.schemas import edm4hep as coffea_edm4hep
+from packaging.version import parse as parse_version
 
 from awkward_zipper import EDM4HEP, edm4hep_version, podio_collection_types
 from awkward_zipper.assets import edm4hep_ver, versions
 from awkward_zipper.layouts import edm4hep as zipper_edm4hep
 
 TREE_NAME = "events"
+# coffea 2026.7.0 predates the podio generic-link typing, the exact relation-branch
+# matching and the edm4hep >= 00-99-02 yaml versions (scikit-hep/coffea#1617, #1633);
+# the comparisons that need them run only against a newer coffea
+_COFFEA_HAS_NEW_EDM4HEP = parse_version(coffea.__version__) > parse_version("2026.7.0")
+needs_new_coffea = pytest.mark.skipif(
+    not _COFFEA_HAS_NEW_EDM4HEP,
+    reason="installed coffea predates the EDM4HEP link typing and yaml versions",
+)
 # PARAMETERS and *Map branches are unreadable by uproot (the filter coffea's tests use)
 PARAMETERS_FILTER = "/^(?!.*(PARAMETERS|_.*Map))/"
 
 # sample -> (file, edm4hep.yaml version, branch filter): the files coffea tests with
 SAMPLES = {
-    "p8_ee_WW": ("tests/samples/p8_ee_WW_ecm240_edm4hep.root", "latest", None),
+    "p8_ee_WW": ("tests/samples/p8_ee_WW_ecm240_edm4hep.root", "00.99.01", None),
+    "p8_ee_WW_latest": ("tests/samples/p8_ee_WW_ecm240_edm4hep.root", "latest", None),
     "key4hep_00-99-01": ("tests/samples/edm4hep.root", "00.99.01", PARAMETERS_FILTER),
     # EDM4hep's own example files (backwards-compat inputs and a CI artifact)
     "example_00-99-02": (
@@ -111,7 +122,17 @@ def _build(file_name, ver, filter_name):
 _cache = {}
 
 
+# samples whose coffea reference needs the newer coffea
+NEW_COFFEA_SAMPLES = {
+    name for name, (_, ver, _) in SAMPLES.items() if ver != "00.99.01"
+}
+
+
 def _built(sample):
+    if sample in NEW_COFFEA_SAMPLES and not _COFFEA_HAS_NEW_EDM4HEP:
+        pytest.skip(
+            "installed coffea predates the EDM4HEP link typing and yaml versions"
+        )
     if sample not in _cache:
         _cache[sample] = _build(*SAMPLES[sample])
     return _cache[sample]
@@ -326,7 +347,8 @@ def test_version_selection():
     assert edm4hep_version("latest") is EDM4HEP
     assert EDM4HEP.version("latest") is EDM4HEP
     assert EDM4HEP.edm4hep_version == versions[-1]
-    assert EDM4HEP.edm4hep_version == EDM4HEPSchema.edm4hep_version
+    if _COFFEA_HAS_NEW_EDM4HEP:
+        assert EDM4HEP.edm4hep_version == EDM4HEPSchema.edm4hep_version
     assert edm4hep_version("00.99.01") is edm4hep_version("00-99-01")
     assert edm4hep_version("00.99.01") is EDM4HEP.version("00.99.01")
     assert issubclass(edm4hep_version("00.99.00"), EDM4HEP)
@@ -335,6 +357,7 @@ def test_version_selection():
         edm4hep_version("99.99.99")
 
 
+@needs_new_coffea
 def test_bundled_versions_match_coffea():
     assert versions == coffea_versions
     for ver in versions:
@@ -356,6 +379,8 @@ def test_bundled_version_parses(ver):
         assert link["OneToOneRelations"]["from"]["target"] == "ReconstructedParticle"
         assert link["OneToOneRelations"]["to"]["target"] == "MCParticle"
 
+    if not _COFFEA_HAS_NEW_EDM4HEP:
+        return
     # the parsed data model is coffea's (up to the wording of the ObjectID stub)
     coffea_parsed = coffea_edm4hep.parse_yaml(loaded, copy.deepcopy(loaded))
     parsed["datatypes"].pop("edm4hep::ObjectID")

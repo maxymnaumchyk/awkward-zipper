@@ -121,3 +121,48 @@ def _rewrap(array):
     return awkward.from_buffers(
         form, length, buffers, behavior=array.behavior, attrs=array.attrs
     )
+
+
+def _zip_arrays(members, record_name=None):
+    """Zip a mapping of name -> array/Content into a record, array-based.
+
+    Mirrors coffea's ``zip_forms``: if every member is a jagged
+    ``ListOffsetArray`` the result is a single jagged record (``var * record``)
+    sharing the first member's offsets; otherwise a flat ``RecordArray`` wrapping
+    the members as-is (which may themselves be flat, jagged, or nested records).
+    """
+    names = list(members.keys())
+    layouts = [
+        m.layout if isinstance(m, awkward.Array) else m for m in members.values()
+    ]
+    params = {"__record__": record_name} if record_name is not None else {}
+
+    if layouts and all(
+        isinstance(layout, awkward.contents.ListOffsetArray) for layout in layouts
+    ):
+        offsets = layouts[0].offsets
+        contents = [layout.content for layout in layouts]
+        length = awkward._util.maybe_length_of(contents[0])
+        record = awkward.contents.RecordArray(
+            contents, names, length=length, parameters=params
+        )
+        return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
+
+    length = awkward._util.maybe_length_of(layouts[0]) if layouts else 0
+    return awkward.contents.RecordArray(
+        layouts, names, length=length, parameters=params
+    )
+
+
+def _total_items(offsets):
+    """Number of flat items implied by an offsets array (``offsets[-1]``).
+
+    Returns an unknown length when the offsets are virtual, so reading it does
+    not materialize the counts.
+    """
+    import numpy as np
+
+    data = offsets.data if isinstance(offsets, awkward.index.Index) else offsets
+    if isinstance(data, np.ndarray):
+        return int(data[-1])
+    return awkward._nplikes.shape.unknown_length
