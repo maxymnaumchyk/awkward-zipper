@@ -31,6 +31,77 @@ def _non_materializing_get_field(record, field):
     return awkward.Array(record._contents[index])
 
 
+def _as_layout(arr):
+    """Return the low-level layout of an awkward.Array (or pass a Content through)."""
+    if isinstance(arr, awkward.Array):
+        return arr.layout
+    return arr
+
+
+def _jagged_content(arr):
+    """Flat content of a single-jagged (ListOffsetArray) array, without materializing."""
+    return _as_layout(arr).content
+
+
+def _jagged_offsets(arr):
+    """Event-level offsets Index of a single-jagged (ListOffsetArray) array."""
+    return _as_layout(arr).offsets
+
+
+def _record_length(contents):
+    """Length to give a ``RecordArray`` built from ``contents``.
+
+    Returns ``unknown_length`` when any content is still virtual: passing a
+    concrete length would make ``RecordArray`` slice the contents to reconcile
+    the length, which materializes the (virtual) shape generators. When
+    everything is materialized we validate and return the real common length.
+    """
+    if not all(_as_layout(c).is_all_materialized for c in contents):
+        return awkward._nplikes.shape.unknown_length
+    return _check_equal_lengths(contents)
+
+
+def _zip_jagged(members, offsets, record_name=None, parameters=None):
+    """Build a jagged collection (``ListOffsetArray`` of ``RecordArray``).
+
+    Parameters
+    ----------
+    members : dict[str, awkward.contents.Content]
+        Mapping of field name to the flat content of each member (all members
+        must share the same per-event ``offsets``).
+    offsets : awkward.index.Index
+        The shared event-level offsets.
+    record_name : str, optional
+        ``__record__`` parameter for the inner record.
+    parameters : dict, optional
+        Extra parameters for the inner record.
+    """
+    contents = tuple(members.values())
+    fields = tuple(members.keys())
+    params = {}
+    if record_name is not None:
+        params["__record__"] = record_name
+    if parameters:
+        params.update(parameters)
+    record = awkward.contents.RecordArray(
+        contents, fields, length=_record_length(contents), parameters=params
+    )
+    return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
+
+
+def _append_record_fields(listoffset, new_members):
+    """Append flat-content fields to the record inside a ``ListOffsetArray``."""
+    record = listoffset.content
+    contents = list(record.contents) + list(new_members.values())
+    fields = list(record.fields) + list(new_members.keys())
+    new_record = awkward.contents.RecordArray(
+        contents, fields, length=_record_length(contents), parameters=record.parameters
+    )
+    return awkward.contents.ListOffsetArray(
+        offsets=listoffset.offsets, content=new_record
+    )
+
+
 def _maybe_raw_generator(buffer):
     if isinstance(buffer, awkward._nplikes.virtual.VirtualNDArray):
         if hasattr(buffer._generator, "__awkward_raw_generator__"):
@@ -50,3 +121,48 @@ def _rewrap(array):
     return awkward.from_buffers(
         form, length, buffers, behavior=array.behavior, attrs=array.attrs
     )
+
+
+def _zip_arrays(members, record_name=None):
+    """Zip a mapping of name -> array/Content into a record, array-based.
+
+    Mirrors coffea's ``zip_forms``: if every member is a jagged
+    ``ListOffsetArray`` the result is a single jagged record (``var * record``)
+    sharing the first member's offsets; otherwise a flat ``RecordArray`` wrapping
+    the members as-is (which may themselves be flat, jagged, or nested records).
+    """
+    names = list(members.keys())
+    layouts = [
+        m.layout if isinstance(m, awkward.Array) else m for m in members.values()
+    ]
+    params = {"__record__": record_name} if record_name is not None else {}
+
+    if layouts and all(
+        isinstance(layout, awkward.contents.ListOffsetArray) for layout in layouts
+    ):
+        offsets = layouts[0].offsets
+        contents = [layout.content for layout in layouts]
+        length = awkward._util.maybe_length_of(contents[0])
+        record = awkward.contents.RecordArray(
+            contents, names, length=length, parameters=params
+        )
+        return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
+
+    length = awkward._util.maybe_length_of(layouts[0]) if layouts else 0
+    return awkward.contents.RecordArray(
+        layouts, names, length=length, parameters=params
+    )
+
+
+def _total_items(offsets):
+    """Number of flat items implied by an offsets array (``offsets[-1]``).
+
+    Returns an unknown length when the offsets are virtual, so reading it does
+    not materialize the counts.
+    """
+    import numpy as np
+
+    data = offsets.data if isinstance(offsets, awkward.index.Index) else offsets
+    if isinstance(data, np.ndarray):
+        return int(data[-1])
+    return awkward._nplikes.shape.unknown_length
