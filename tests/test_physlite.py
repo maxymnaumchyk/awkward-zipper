@@ -95,6 +95,31 @@ def test_elementlink_reconstitution():
     }
 
 
+def _record_fields(form):
+    """Nested record field names, in order (array_equal ignores field order)."""
+    if isinstance(form, awkward.forms.RecordForm):
+        return [
+            (f, _record_fields(c))
+            for f, c in zip(form.fields, form.contents, strict=True)
+        ]
+    if isinstance(form, awkward.forms.UnionForm):
+        return [_record_fields(c) for c in form.contents]
+    if hasattr(form, "content"):
+        return _record_fields(form.content)
+    return None
+
+
+def test_field_order():
+    # array_equal matches record fields by name; the layouts must also list them
+    # in the same order as coffea
+    assert _record_fields(zipper_array.layout.form) == _record_fields(
+        coffea_array.layout.form
+    )
+    assert _record_fields(zipper_array_virtual.layout.form) == _record_fields(
+        coffea_array_virtual.layout.form
+    )
+
+
 def test_behaviors():
     diff = set(coffea_array.behavior) - set(zipper_array.behavior)
     for behavior in diff.copy():
@@ -112,4 +137,5 @@ if __name__ == "__main__":
     test_no_materialization()
     test_eventindex_and_derived_fields()
     test_elementlink_reconstitution()
+    test_field_order()
     test_behaviors()

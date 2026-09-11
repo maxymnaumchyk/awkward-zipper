@@ -139,6 +139,10 @@ class PHYSLITE(BaseLayoutBuilder):
             to_zip = {}
             for sk, layout in items:
                 if "." in sk:
+                    # the reconstituted parent takes the place of its first leaf
+                    # (coffea sees the parent branch at that position)
+                    parent = sk.split(".", 1)[0]
+                    to_zip.setdefault(parent, reconstituted[parent])
                     continue
                 field_layout = layout
                 if isinstance(layout, awkward.contents.RecordArray) and layout.fields:
@@ -149,7 +153,6 @@ class PHYSLITE(BaseLayoutBuilder):
                         dict(zip(fields, layout.contents, strict=True))
                     )
                 to_zip[sk] = field_layout
-            to_zip.update(reconstituted)
 
             mixin = self.mixins.get(objname)
             try:
