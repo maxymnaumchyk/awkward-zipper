@@ -17,3 +17,6 @@ wheels/
 main.py
 
 uv.lock
+
+# sphinx build output
+docs/_build/
