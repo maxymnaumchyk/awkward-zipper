@@ -239,14 +239,17 @@ class Electron(candidate.PtEtaPhiMCandidate, base.NanoCollection):
         """Returns a boolean array marking tight cut-based electrons"""
         return self.cutBased >= self.TIGHT
 
+    @property
     def matched_gen(self):
         """The matched gen-level particle as determined by the NanoAOD branch genPartIdx"""
         return self._events().GenPart._apply_global_index(self.genPartIdxG)
 
+    @property
     def matched_jet(self):
         """The matched jet as determined by the NanoAOD branch jetIdx"""
         return self._events().Jet._apply_global_index(self.jetIdxG)
 
+    @property
     def matched_photon(self):
         """The associated photon as determined by the NanoAOD branch photonIdx"""
         return self._events().Photon._apply_global_index(self.photonIdxG)
@@ -272,14 +275,17 @@ behavior.update(
 class LowPtElectron(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     """NanoAOD low-pt electron object"""
 
+    @property
     def matched_gen(self):
         """The matched gen-level particle as determined by the NanoAOD branch genPartIdx"""
         return self._events().GenPart._apply_global_index(self.genPartIdxG)
 
+    @property
     def matched_electron(self):
         """The matched gen-level electron as determined by the NanoAOD branch electronIdx"""
         return self._events().Electron._apply_global_index(self.electronIdxG)
 
+    @property
     def matched_photon(self):
         """The associated photon as determined by the NanoAOD branch photonIdx"""
         return self._events().Photon._apply_global_index(self.photonIdxG)
@@ -303,14 +309,17 @@ behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Muon", behav
 class Muon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     """NanoAOD muon object"""
 
+    @property
     def matched_fsrPhoton(self):
         """The matched FSR photon with the lowest dR/ET2. Accessed via the NanoAOD branch fsrPhotonIdx"""
         return self._events().FsrPhoton._apply_global_index(self.fsrPhotonIdxG)
 
+    @property
     def matched_gen(self):
         """The matched gen-level particle as determined by the NanoAOD branch genPartIdx"""
         return self._events().GenPart._apply_global_index(self.genPartIdxG)
 
+    @property
     def matched_jet(self):
         """The matched jet as determined by the NanoAOD branch jetIdx"""
         return self._events().Jet._apply_global_index(self.jetIdxG)
@@ -334,10 +343,12 @@ behavior.update(awkward._util.copy_behaviors("PtEtaPhiMCandidate", "Tau", behavi
 class Tau(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     """NanoAOD tau object"""
 
+    @property
     def matched_gen(self):
         """The matched gen-level particle as determined by the NanoAOD branch genPartIdx"""
         return self._events().GenPart._apply_global_index(self.genPartIdxG)
 
+    @property
     def matched_jet(self):
         """The matched jet as determined by the NanoAOD branch jetIdx"""
         return self._events().Jet._apply_global_index(self.jetIdxG)
@@ -394,14 +405,17 @@ class Photon(candidate.PtEtaPhiMCandidate, base.NanoCollection):
             return self.cutBased >= self.TIGHT
         return (self.cutBasedBitmap & (1 << (self.TIGHT - 1))) != 0
 
+    @property
     def matched_electron(self):
         """The matched electron as determined by the NanoAOD branch electronIdx"""
         return self._events().Electron._apply_global_index(self.electronIdxG)
 
+    @property
     def matched_gen(self):
         """The matched gen-level particle as determined by the NanoAOD branch genPartIdx"""
         return self._events().GenPart._apply_global_index(self.genPartIdxG)
 
+    @property
     def matched_jet(self):
         """The matched jet as determined by the NanoAOD branch jetIdx"""
         return self._events().Jet._apply_global_index(self.jetIdxG)
@@ -427,6 +441,7 @@ behavior.update(
 class FsrPhoton(candidate.PtEtaPhiMCandidate, base.NanoCollection):
     """NanoAOD fsr photon object"""
 
+    @property
     def matched_muon(self):
         """The matched muon as determined by the NanoAOD branch muonIdx"""
         return self._events().Muon._apply_global_index(self.muonIdxG)
@@ -472,6 +487,7 @@ class Jet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
         """Returns a boolean array marking tight jets with explicit lepton veto according to jetId index"""
         return (self.jetId & (1 << self.TIGHTLEPVETO)) != 0
 
+    @property
     def matched_electrons(self):
         """
         The matched electrons as determined by the NanoAOD branch electronIdx. The resulting awkward
@@ -480,6 +496,7 @@ class Jet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
         """
         return self._events().Electron._apply_global_index(self.electronIdxG)
 
+    @property
     def matched_muons(self):
         """
         The matched muons as determined by the NanoAOD branch muonIdx. The resulting awkward
@@ -488,12 +505,14 @@ class Jet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
         """
         return self._events().Muon._apply_global_index(self.muonIdxG)
 
+    @property
     def matched_gen(self):
         """
         AK4 jets made with visible genparticles, matched to this jet via the NanoAOD branch genJetIdx
         """
         return self._events().GenJet._apply_global_index(self.genJetIdxG)
 
+    @property
     def constituents(self):
         if "pFCandsIdxG" not in self.fields:
             msg = "PF candidates are only available for PFNano"
@@ -541,13 +560,16 @@ class FatJet(candidate.PtEtaPhiMCandidate, base.NanoCollection):
         """Returns a boolean array marking tight jets with explicit lepton veto according to jetId index"""
         return (self.jetId & (1 << self.TIGHTLEPVETO)) != 0
 
+    @property
     def subjets(self):
         return self._events().SubJet._apply_global_index(self.subJetIdxG)
 
+    @property
     def matched_gen(self):
         """AK8 jets made of visible genparticles, matched via the NanoAOD branch genJetAK8Idx"""
         return self._events().GenJetAK8._apply_global_index(self.genJetAK8IdxG)
 
+    @property
     def constituents(self):
         if "pFCandsIdxG" not in self.fields:
             msg = "PF candidates are only available for PFNano"
@@ -659,10 +681,12 @@ class AssociatedPFCand(base.NanoCollection):
         "GenFatJetCands": ("GenJetAK8", "GenCands"),
     }
 
+    @property
     def jet(self):
         collection = self.collection_map[self._collection_name()][0]
         return self._events()[collection]._apply_global_index(self.jetIdxG)
 
+    @property
     def pf(self):
         collection = self.collection_map[self._collection_name()][1]
         return self._events()[collection]._apply_global_index(self.pFCandsIdxG)
@@ -683,10 +707,12 @@ class AssociatedSV(base.NanoCollection):
         "GenFatJetSVs": ("GenJetAK8", "SV"),
     }
 
+    @property
     def jet(self):
-        collection = self._events()[self.collection_map[self._collection_name()][0]]
+        collection = self.collection_map[self._collection_name()][0]
         return self._events()[collection]._apply_global_index(self.jetIdxG)
 
+    @property
     def sv(self):
         collection = self.collection_map[self._collection_name()][1]
         return self._events()[collection]._apply_global_index(self.sVIdxG)
