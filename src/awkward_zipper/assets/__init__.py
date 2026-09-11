@@ -13,15 +13,12 @@ import yaml
 
 root_dir = importlib.resources.files("awkward_zipper.assets")
 
-versions = [
-    "00-10-01",
-    "00-10-02",
-    "00-10-03",
-    "00-10-04",
-    "00-10-05",
-    "00-99-00",
-    "00-99-01",
-]
+# Zero-padded tags: lexical order is release order.
+versions = sorted(
+    p.name[len("edm4hep_v") : -len(".yaml")]
+    for p in root_dir.iterdir()
+    if p.name.startswith("edm4hep_v") and p.name.endswith(".yaml")
+)
 
 
 def _load_edm4hep_version(yamlfile):

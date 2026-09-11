@@ -1,12 +1,14 @@
 import copy
+import re
 import typing as tp
+import warnings
+from functools import cache
 
 import awkward
 
-from awkward_zipper.assets import edm4hep_ver
+from awkward_zipper.assets import edm4hep_ver, versions
 from awkward_zipper.awkward_util import (
     _non_materializing_get_field,
-    _record_length,
     _rewrap,
 )
 from awkward_zipper.kernels import (
@@ -16,6 +18,8 @@ from awkward_zipper.kernels import (
     regular_to_jagged,
 )
 from awkward_zipper.layouts.base import BaseLayoutBuilder
+
+_link_collection = re.compile(r"podio::LinkCollection<(.+),(.+)>")
 
 
 def parse_members_and_relations(members_and_relation_list, target_text=False):
@@ -38,8 +42,60 @@ def parse_members_and_relations(members_and_relation_list, target_text=False):
     return parsed
 
 
+def _synthesize_link_datatypes(loaded_dict):
+    """edm4hep >= 00-99-02 defines links in a ``links`` section; rebuild them in the
+    datatype shape (float weight + from/to relations) the rest of the parser expects."""
+    synthesized = {}
+    for link_name, link_def in loaded_dict.get("links", {}).items():
+        from_type = link_def["From"]
+        to_type = link_def["To"]
+        synthesized[link_name] = {
+            "Description": link_def.get("Description", ""),
+            "Members": ["float weight  // weight of this link"],
+            "OneToOneRelations": [
+                f"{from_type}  from  // reference to the source object of this link",
+                f"{to_type}  to  // reference to the target object of this link",
+            ],
+        }
+    return synthesized
+
+
+def podio_collection_types(tree):
+    """Map collection name to podio dataType from the file's ``podio_metadata`` tree.
+
+    Returns None when the file has no metadata or predates the named leaf layout
+    (podio < 1.3 writes positional ``_0.._3`` leaves).
+    """
+    directory = tree.file.root_directory
+    if "podio_metadata" not in directory:
+        return None
+    metadata = directory["podio_metadata"]
+    branch = f"{tree.name}___CollectionTypeInfo"
+    if branch not in metadata or f"{branch}.name" not in metadata[branch]:
+        return None
+    names, datatypes = f"{branch}.name", f"{branch}.dataType"
+    info = metadata[branch].arrays([names, datatypes], library="ak")[0]
+    return dict(zip(info[names].tolist(), info[datatypes].tolist(), strict=True))
+
+
+def _relation_branches(forms, collection, member):
+    """Pop the leaves of the ``_{collection}_{member}`` relation or vector-member
+    branch, keyed ``member.leaf``. The top-level name is matched exactly because
+    collection names may themselves contain underscores (``SiTracks_Refitted``)."""
+    top = f"_{collection}_{member}"
+    return {
+        name.split("/")[1][len(collection) + 2 :]: forms.pop(name)
+        for name in list(forms)
+        if "/" in name and name.split("/")[0] == top
+    }
+
+
 def parse_yaml(loaded_dict, parsed_dict):
     """Post-process the loaded edm4hep yaml into the structure the builder needs."""
+    links = _synthesize_link_datatypes(loaded_dict)
+    loaded_dict = {**loaded_dict, "datatypes": {**loaded_dict["datatypes"], **links}}
+    parsed_dict["datatypes"].update(copy.deepcopy(links))
+
     for key in loaded_dict:
         if not isinstance(loaded_dict[key], dict):
             continue
@@ -70,11 +126,41 @@ def sort_dict(d):
     return {k: d[k] for k in sorted(d)}
 
 
-def _zip_shared_offsets(members, record_name=None, parameters=None):
-    """Zip layouts that share per-event offsets into one jagged record."""
+@cache
+def load_edm4hep(version):
+    """Load and parse the edm4hep yaml for a version, caching the result.
+
+    The returned ``(raw, parsed)`` dicts are treated as read-only by the builder,
+    so a single parse is shared across all builds for a given version.
+    """
+    raw = edm4hep_ver[version]()
+    return raw, parse_yaml(raw, copy.deepcopy(raw))
+
+
+def _offsets_length(offsets, contents):
+    """Item count implied by ``offsets`` (``offsets[-1]``), lazily.
+
+    Contents may legitimately differ in length -- coffea copies Link branches onto
+    target collections whose item counts differ slightly -- so the collection's own
+    offsets define the record length rather than requiring equal lengths.
+    """
+    if not all(c.is_all_materialized for c in contents):
+        return awkward._nplikes.shape.unknown_length
+    data = offsets.data if isinstance(offsets, awkward.index.Index) else offsets
+    # a copied Link can be shorter than the collection it is attached to; keep the
+    # record valid by never exceeding the shortest content
+    return min(int(data[-1]), *(c.length for c in contents))
+
+
+def _zip_shared_offsets(members, record_name=None, parameters=None, offsets=None):
+    """Zip layouts that share per-event offsets into one jagged record.
+
+    ``offsets`` defaults to those of the first member (coffea's ``zip_forms``).
+    """
     names = list(members.keys())
     layouts = list(members.values())
-    offsets = layouts[0].offsets
+    if offsets is None:
+        offsets = layouts[0].offsets
     contents = [layout.content for layout in layouts]
     params = {}
     if record_name is not None:
@@ -82,17 +168,19 @@ def _zip_shared_offsets(members, record_name=None, parameters=None):
     if parameters:
         params.update(parameters)
     record = awkward.contents.RecordArray(
-        contents, names, length=_record_length(contents), parameters=params
+        contents, names, length=_offsets_length(offsets, contents), parameters=params
     )
     return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
 
 
 class EDM4HEP(BaseLayoutBuilder):
-    """EDM4HEP layout builder (edm4hep 00.99.01).
+    """EDM4HEP layout builder.
 
-    Array-based re-implementation of coffea's ``EDM4HEPSchema``. The layout is
-    driven by the vendored EDM4HEP yaml data model, which describes each
-    datatype's Members, VectorMembers, OneToOneRelations and OneToManyRelations:
+    Array-based re-implementation of coffea's ``EDM4HEPSchema`` for the newest
+    bundled ``edm4hep.yaml`` version; use :func:`edm4hep_version` (or
+    ``EDM4HEP.version(...)``) to pick an older one. The layout is driven by the
+    vendored EDM4HEP yaml data model, which describes each datatype's Members,
+    VectorMembers, OneToOneRelations and OneToManyRelations:
 
     - component members (``Vector3f``/``Vector4f``/...) such as
       ``X.position.{x,y,z}`` are zipped into an ``X.position`` sub-record,
@@ -104,15 +192,22 @@ class EDM4HEP(BaseLayoutBuilder):
     - the remaining ``X.*`` branches are zipped into the ``X`` collection.
 
     The collection datatypes come from the TTree's branch typenames, which are not
-    present in ``tree.arrays()`` output, so pass them explicitly::
+    present in ``tree.arrays()`` output, so pass them explicitly. Generic podio
+    links (``vector<podio::LinkData>``, podio >= 1.3) are typed from the file's
+    ``podio_metadata`` tree, which :func:`podio_collection_types` reads::
 
-        EDM4HEP()(tree.arrays(...), typenames=tree.typenames())
+        EDM4HEP()(
+            tree.arrays(...),
+            typenames=tree.typenames(),
+            podio_collection_types=podio_collection_types(tree),
+        )
 
-    If omitted, the datatypes are inferred by matching each collection's member
-    branch names against the yaml data model.
+    ``extra_mixins`` overrides the link type of a collection. If ``typenames`` is
+    omitted, the datatypes are inferred by matching each collection's member branch
+    names against the yaml data model.
     """
 
-    edm4hep_version = "00-99-01"
+    edm4hep_version = versions[-1]
 
     _components_mixins: tp.ClassVar = {
         "Vector4f": "LorentzVector",
@@ -139,12 +234,17 @@ class EDM4HEP(BaseLayoutBuilder):
     _two_vec_replacement: tp.ClassVar = {"a": "x", "b": "y"}
     _replacement: tp.ClassVar = {**_momentum_fields_e, **_two_vec_replacement}
 
+    # By default, Links are not copied onto their target datatype collections: many
+    # collections may share a datatype and not all of them are compatible targets.
+    # Subclasses that know which link belongs to which collection can enable it and
+    # provide ``_datatype_priority`` (datatype -> collection to copy to).
     copy_links_to_target_datatype = False
     _datatype_priority: tp.ClassVar = {}
 
-    def __call__(self, array: awkward.Array, typenames=None) -> awkward.Array:
-        self.edm4hep = edm4hep_ver[self.edm4hep_version]()
-        self.parsed_edm4hep = parse_yaml(self.edm4hep, copy.deepcopy(self.edm4hep))
+    def __call__(
+        self, array: awkward.Array, typenames=None, podio_collection_types=None
+    ) -> awkward.Array:
+        self.edm4hep, self.parsed_edm4hep = load_edm4hep(self.edm4hep_version)
 
         n_events = int(awkward.num(array, axis=0))
 
@@ -156,7 +256,7 @@ class EDM4HEP(BaseLayoutBuilder):
             key = f"{field.split('.')[0]}/{field}" if "." in field else field
             forms[key] = layout
 
-        self._create_mixin(forms, typenames)
+        self._create_mixin(forms, typenames, podio_collection_types)
         output = self._build_collections(forms)
 
         contents = tuple(output.values())
@@ -168,6 +268,19 @@ class EDM4HEP(BaseLayoutBuilder):
         nanoevents = awkward.with_name(_rewrap(nanoevents), name="NanoEvents")
         nanoevents.attrs["@original_array"] = nanoevents
         return nanoevents
+
+    @classmethod
+    def version(cls, ver="latest"):
+        """Return the layout builder class for a given edm4hep.yaml version.
+
+        Parameters
+        ----------
+            ver : str, optional
+                Version of edm4hep.yaml, written either as "00.99.04" or "00-99-04".
+                "latest" (default) selects the newest bundled version. The available
+                versions are listed in ``awkward_zipper.assets.versions``.
+        """
+        return edm4hep_version(ver)
 
     # ---------------- datatype mixins ----------------
 
@@ -197,30 +310,58 @@ class EDM4HEP(BaseLayoutBuilder):
                 best, best_score = dt_name, score
         return best
 
-    def _create_mixin(self, forms, typenames):
+    def _create_mixin(self, forms, typenames, podio_types):
         all_collections = {key.split("/")[0] for key in forms if "/" in key}
+        self._all_collections = all_collections
         collections = {c for c in all_collections if not c.startswith("_")}
 
+        # podio >= 1.3 stores generic links as vector<podio::LinkData>; the (From, To)
+        # pair naming the link datatype lives only in podio_metadata
+        link_types = {
+            (link["From"], link["To"]): name.split("::")[-1]
+            for name, link in self.edm4hep.get("links", {}).items()
+        }
+        podio_types = podio_types or {}
         mixins = {}
         for name in collections:
-            datatype = (typenames or {}).get(name)
-            if datatype is None:
+            if typenames is None:
                 inferred = self._infer_datatype(name, forms)
                 mixins[name] = (
                     inferred.split("::")[-1] if inferred else "edm4hep_nanocollection"
                 )
-                continue
-            if datatype.startswith(r"vector<edm4hep::"):
-                if not datatype.endswith("Data>"):
-                    msg = f"Unknown datatype: {datatype}"
-                    raise RuntimeError(msg)
-                mixins[name] = datatype.split("::")[-1][:-5]
-            elif datatype.startswith(r"vector<podio::"):
-                mixins[name] = datatype.split("::")[-1][:-1]
             else:
-                mixins[name] = datatype
+                datatype = typenames.get(name, "edm4hep_nanocollection")
+                if datatype.startswith(r"vector<edm4hep::"):
+                    if not datatype.endswith("Data>"):
+                        msg = f"Unknown datatype: {datatype}"
+                        raise RuntimeError(msg)
+                    mixins[name] = datatype.split("::")[-1][:-5]
+                elif datatype.startswith(r"vector<podio::"):
+                    mixins[name] = datatype.split("::")[-1][:-1]
+                else:
+                    mixins[name] = datatype
 
-        self._datatype_mixins = {**mixins, **self.extra_mixins}
+            if mixins[name] == "LinkData":
+                endpoints = _link_collection.match(podio_types.get(name, ""))
+                stem = name[: -len("Collection")] if name.endswith("Collection") else ""
+                if endpoints and endpoints.groups() in link_types:
+                    mixins[name] = link_types[endpoints.groups()]
+                elif "edm4hep::" + stem in self.parsed_edm4hep["datatypes"]:
+                    mixins[name] = stem
+
+        mixins_dictionary = {**mixins, **self.extra_mixins}
+        unresolved = sorted(n for n, m in mixins_dictionary.items() if m == "LinkData")
+        if unresolved:
+            msg = (
+                f"Cannot determine the link type of {unresolved}: they are stored as "
+                "podio::LinkData and no podio_collection_types named their From/To "
+                "types (podio >= 1.3 writes them to the file's podio_metadata tree). "
+                "Pass podio_collection_types=podio_collection_types(tree), or subclass "
+                "EDM4HEP with extra_mixins = {<collection>: <link datatype>} using the "
+                "names in load_edm4hep(version)[0]['links']."
+            )
+            raise RuntimeError(msg)
+        self._datatype_mixins = mixins_dictionary
 
     def _datatype_spec(self, datatype):
         """yaml spec for a datatype, or None when it is not a real edm4hep type."""
@@ -229,13 +370,22 @@ class EDM4HEP(BaseLayoutBuilder):
         return self.parsed_edm4hep["datatypes"].get("edm4hep::" + datatype)
 
     def _lookup_branch(self, collection_name, branch_name, key=None):
+        """'type'/'doc' (or both) of a branch of a collection, from the yaml model."""
+        unknown = {"type": "unknown", "doc": "unknown"}
         datatype = self._datatype_mixins.get(collection_name)
         if collection_name.startswith("_"):
-            col_name = collection_name[1:].split("_")[0]
-            subcol_name = collection_name[1:].split("_")[-1]
+            # _{collection}_{member}: the collection may contain underscores, so take
+            # the longest known collection; no yaml member name contains one
+            stem = collection_name[1:]
+            col_name = max(
+                (c for c in self._all_collections if stem.startswith(c + "_")),
+                key=len,
+                default=stem.split("_")[0],
+            )
+            subcol_name = stem[len(col_name) + 1 :]
             datatype = self._datatype_mixins.get(col_name)
         if datatype is None:
-            return {"type": "unknown", "doc": "unknown"} if key is None else "unknown"
+            return unknown if key is None else unknown[key]
         collection_edm4hep = self.parsed_edm4hep["datatypes"].get(
             "edm4hep::" + datatype, {}
         )
@@ -243,16 +393,17 @@ class EDM4HEP(BaseLayoutBuilder):
             **collection_edm4hep.get("Members", {}),
             **collection_edm4hep.get("VectorMembers", {}),
             **collection_edm4hep.get("OneToOneRelations", {}),
+            **collection_edm4hep.get("OneToManyRelations", {}),
         }
         if collection_name.startswith("_"):
-            matched = composite.get(subcol_name, {"type": "unknown"})
+            matched = composite.get(subcol_name, unknown)
             composite = {
                 **composite,
                 **self.parsed_edm4hep["components"].get(
                     matched["type"], {"Members": {}}
                 )["Members"],
             }
-        found = composite.get(branch_name, {"type": "unknown", "doc": "unknown"})
+        found = composite.get(branch_name, unknown)
         return found[key] if key is not None else found
 
     # ---------------- processors ----------------
@@ -267,8 +418,10 @@ class EDM4HEP(BaseLayoutBuilder):
 
         for var, branch_list in inverted.items():
             assign_name, type_str = var.split("@")
-            if assign_name == "momentum" or type_str == "unknown":
-                continue
+            if assign_name == "momentum":
+                continue  # Used to create 4 vector for the whole collection, later.
+            if type_str == "unknown":
+                continue  # not in this edm4hep version
             type_name = type_str.split("::")[-1]
             mixin = self._components_mixins.get(type_name)
 
@@ -295,6 +448,8 @@ class EDM4HEP(BaseLayoutBuilder):
                     parts = slash[1].split(".")
                     if len(parts) > 2:
                         branch_var, branch_subvar = parts[-2], parts[-1]
+                        # skip momentum because it will be used later to create
+                        # the 4 vector with E or mass
                         if branch_var == "momentum":
                             continue
                         component = self._lookup_branch(collection, branch_var)
@@ -319,30 +474,34 @@ class EDM4HEP(BaseLayoutBuilder):
         key = f"{matched_collection}/{matched_collection}.{first_var}"
         return forms[key].offsets
 
-    def _matched_collections(self, target_datatype):
+    def _matched_collections(self, target_datatype, interfaces=False):
+        """Collections whose datatype is ``target_datatype``.
+
+        With ``interfaces=True`` (Links) an interface target such as
+        ``edm4hep::TrackerHit`` resolves to the collections of its interfaced
+        types. OneToMany relations never consult the interfaces: coffea gates that
+        on the *string* ``"2"`` while the yaml stores an int, so the fallback never
+        fires there; match that behavior exactly.
+        """
         matched = [
             name
             for name, datatype in self._datatype_mixins.items()
             if "edm4hep::" + datatype == target_datatype
         ]
-        if matched:
+        if matched or not interfaces:
             return matched
-        # Interfaces are only consulted for schema_version "2". Note coffea compares
-        # against the *string* "2" while the yaml stores an int, so in practice the
-        # interface fallback never fires; match that behavior exactly.
-        if self.edm4hep["schema_version"] == "2":
-            interfaces = self.parsed_edm4hep.get("interfaces", {})
-            if target_datatype in interfaces:
-                for i in interfaces[target_datatype]["Types"]:
-                    matched += [
-                        name
-                        for name, datatype in self._datatype_mixins.items()
-                        if "edm4hep::" + datatype == i
-                    ]
-        return matched
+        interfaced = self.parsed_edm4hep.get("interfaces", {})
+        if target_datatype not in interfaced:
+            msg = f"No matched collection for {target_datatype} found!"
+            raise RuntimeError(msg)
+        return [
+            name
+            for i in interfaced[target_datatype]["Types"]
+            for name, datatype in self._datatype_mixins.items()
+            if "edm4hep::" + datatype == i
+        ]
 
     def _process_vector_members(self, forms, all_collections):
-        fieldnames = list(forms)
         for collection in all_collections:
             if collection.startswith("_"):
                 continue
@@ -355,40 +514,43 @@ class EDM4HEP(BaseLayoutBuilder):
                 continue
             branch_var = {
                 name.split("/")[1].split(".")[1]: forms[name]
-                for name in fieldnames
-                if name.split("/")[0] == collection and len(name.split("/")) > 1
+                for name in list(forms)
+                if name.split("/")[0] == collection and "/" in name
             }
             for member in vec_members:
                 if f"{member}_begin" not in branch_var:
                     continue
+                target_contents = _relation_branches(forms, collection, member)
                 begin = branch_var[member + "_begin"]
                 end = branch_var[member + "_end"]
-                forms.pop(f"{collection}/{collection}.{member}_begin", None)
-                forms.pop(f"{collection}/{collection}.{member}_end", None)
+                forms.pop(f"{collection}/{collection}.{member}_begin")
+                forms.pop(f"{collection}/{collection}.{member}_end")
 
-                targets = {
-                    name.split(".")[-1]: forms.pop(name)
-                    for name in fieldnames
-                    if name.startswith(f"_{collection}_{member}")
-                    and len(name.split("/")) > 1
-                    and name in forms
-                }
-                if len(targets) == 0:
+                leaves = list(target_contents)
+                if len(leaves) == 0:
+                    if vec_members[member]["type"].startswith("edm4hep::"):
+                        msg = f"_{collection}_{member} not found!"
+                        raise RuntimeError(msg)
+                    # Example: _EventHeader_weights, a plain vector member stored
+                    # flat ('weights' not to be confused with 'weight')
                     bare = forms.pop(f"_{collection}_{member}", None)
                     if bare is None:
                         continue
                     target_form = begin_end_mapping(begin, end, bare.content)
-                elif len(targets) == 1:
-                    only = next(iter(targets.values()))
-                    target_form = begin_end_mapping(begin, end, only.content)
+                elif len(leaves) == 1:
+                    target_form = begin_end_mapping(
+                        begin, end, target_contents[leaves[0]].content
+                    )
                 else:
+                    # Example: _TrackCollection_trackStates.D0, ...phi, etc. where
+                    # 'trackStates' is a VectorMember of 'TrackState' components
                     vec_contents = {
-                        name: begin_end_mapping(
+                        name.split(".")[1]: begin_end_mapping(
                             begin, end, self._vector_member_target(name, layout)
                         )
-                        for name, layout in targets.items()
+                        for name, layout in target_contents.items()
                     }
-                    target_form = _zip_shared_offsets(sort_dict(vec_contents))
+                    target_form = _zip_shared_offsets(vec_contents)
                 forms[f"{collection}/{collection}.{member}"] = target_form
         return forms
 
@@ -412,7 +574,12 @@ class EDM4HEP(BaseLayoutBuilder):
         return content
 
     def _process_one_to_one_relations(self, forms, all_collections, links=False):
-        fieldnames = list(forms)
+        """OneToOneRelations (``links=False``) or the from/to Links (``links=True``).
+
+        With ``copy_links_to_target_datatype`` the Links are also copied onto the
+        collection their ``from`` side points to, using ``_datatype_priority`` to
+        pick one when several collections share the target datatype.
+        """
         for collection in all_collections:
             if collection.startswith("_"):
                 continue
@@ -423,44 +590,78 @@ class EDM4HEP(BaseLayoutBuilder):
             relations = spec.get("OneToOneRelations") if spec else None
             if not relations:
                 continue
-            is_link = all(k in relations for k in ("from", "to"))
-            if links != is_link:
+            if links and not all(k in relations for k in ("from", "to")):
                 continue
+            copy_targets = set()
+            branches_to_copy = {}
             for member in relations:
                 if (member in ("from", "to")) != links:
                     continue
-                targets = {
-                    name.split(".")[-1]: forms.pop(name)
-                    for name in fieldnames
-                    if name.startswith(f"_{collection}_{member}")
-                    and len(name.split("/")) > 1
-                    and name in forms
-                }
-                if not targets:
+                target_contents = _relation_branches(forms, collection, member)
+                target_datatype = relations[member]["type"]
+                if not target_datatype.startswith("edm4hep::"):
+                    msg = f"{member} does not point to a valid datatype({target_datatype})!"
+                    raise RuntimeError(msg)
+                if not target_contents:
                     continue
-                for matched in self._matched_collections(relations[member]["type"]):
+                matched_collections = self._matched_collections(
+                    target_datatype, interfaces=links
+                )
+                if not matched_collections:
+                    warnings.warn(
+                        f"No matched collection for {target_datatype} found!\n skipping ...",
+                        stacklevel=2,
+                    )
+                    continue
+                for matched in matched_collections:
                     target_offsets = self._target_offsets(matched, forms)
                     if target_offsets is None:
                         continue
-                    index = targets["index"]
-                    content = dict(targets)
+                    content = {
+                        name.split(".")[1]: layout
+                        for name, layout in target_contents.items()
+                    }
+                    index = content["index"]
                     content["index_Global"] = awkward.contents.ListOffsetArray(
                         index.offsets, local2global(index, target_offsets)
                     )
                     if links:
+                        link_form = _zip_shared_offsets(content)
                         forms[f"{collection}/{collection}.Link_{member}_{matched}"] = (
-                            _zip_shared_offsets(content)
+                            link_form
                         )
+                        if self._should_copy_link(matched, matched_collections):
+                            if member == "from":
+                                copy_targets.add(matched)
+                            branches_to_copy[f"Link_{member}_{matched}"] = link_form
                     else:
                         for name, layout in content.items():
                             forms[
                                 f"{collection}/{collection}."
                                 f"{member}_idx_{matched}_{name}"
                             ] = layout
+
+            # copy the collected links onto their target collections
+            if links and self.copy_links_to_target_datatype:
+                for matched in copy_targets:
+                    for name, layout in branches_to_copy.items():
+                        forms[f"{matched}/{matched}.{name}"] = layout
         return forms
 
+    def _should_copy_link(self, matched, matched_collections):
+        """Whether a Link branch should also be copied onto ``matched``."""
+        if not self.copy_links_to_target_datatype:
+            return False
+        if not self._datatype_priority:
+            msg = "Cannot copy links if no priority is given!"
+            raise RuntimeError(msg)
+        if len(matched_collections) > 1:
+            # choose which one to copy
+            datatype = self._datatype_mixins.get(matched)
+            return self._datatype_priority.get(datatype) == matched
+        return True
+
     def _process_one_to_many_relations(self, forms, all_collections):
-        fieldnames = list(forms)
         for collection in all_collections:
             if collection.startswith("_"):
                 continue
@@ -473,33 +674,33 @@ class EDM4HEP(BaseLayoutBuilder):
                 continue
             branch_var = {
                 name.split("/")[1].split(".")[1]: forms[name]
-                for name in fieldnames
-                if name.split("/")[0] == collection and len(name.split("/")) > 1
+                for name in list(forms)
+                if name.split("/")[0] == collection and "/" in name
             }
             for member in relations:
                 if member in ("from", "to") or f"{member}_begin" not in branch_var:
                     continue
+                target_contents = _relation_branches(forms, collection, member)
                 begin = branch_var[member + "_begin"]
                 end = branch_var[member + "_end"]
-                forms.pop(f"{collection}/{collection}.{member}_begin", None)
-                forms.pop(f"{collection}/{collection}.{member}_end", None)
+                forms.pop(f"{collection}/{collection}.{member}_begin")
+                forms.pop(f"{collection}/{collection}.{member}_end")
 
-                targets = {
-                    name.split(".")[-1]: forms.pop(name)
-                    for name in fieldnames
-                    if name.startswith(f"_{collection}_{member}")
-                    and len(name.split("/")) > 1
-                    and name in forms
-                }
-                if not targets:
+                target_datatype = relations[member]["type"]
+                if not target_datatype.startswith("edm4hep::"):
+                    msg = f"{member} does not point to a valid datatype({target_datatype})!"
+                    raise RuntimeError(msg)
+                if not target_contents:
                     continue
-                for matched in self._matched_collections(relations[member]["type"]):
+                for matched in self._matched_collections(target_datatype):
                     target_offsets = self._target_offsets(matched, forms)
                     if target_offsets is None:
                         continue
                     nested = {
-                        name: begin_end_mapping(begin, end, layout.content)
-                        for name, layout in targets.items()
+                        name.split(".")[1]: begin_end_mapping(
+                            begin, end, layout.content
+                        )
+                        for name, layout in target_contents.items()
                     }
                     to_zip = dict(nested)
                     if "index" in nested:
@@ -530,6 +731,9 @@ class EDM4HEP(BaseLayoutBuilder):
             }
             if not content:
                 continue
+            # the collection's offsets come from its first branch (before sorting):
+            # a copied Link branch carries the offsets of the link collection
+            offsets = next(iter(content.values())).offsets
             content = {self._replacement.get(k, k): v for k, v in content.items()}
             if mixin == "ReconstructedParticle":
                 content.pop("E", None)
@@ -543,25 +747,51 @@ class EDM4HEP(BaseLayoutBuilder):
                     .get("Description", mixin),
                 }
             output[name] = _zip_shared_offsets(
-                sort_dict(content), record_name=mixin, parameters=params
+                sort_dict(content),
+                record_name=mixin,
+                parameters=params,
+                offsets=offsets,
             )
+            # the empty grouping branch "X" that accompanies "X/X.y" carries no info
             forms.pop(name, None)
         return output, forms
 
     def _unknown_collections(self, output, forms):
+        """Handle the unknown, empty or singleton branches that remain.
+
+        Mirrors coffea: empty grouping records are dropped, a remaining jagged
+        record is left out of the output, jagged/flat singletons pass through.
+        """
         for name, layout in list(forms.items()):
-            record = layout.content if hasattr(layout, "content") else None
-            if isinstance(record, awkward.contents.RecordArray) and not record.fields:
-                forms.pop(name)
-                continue
-            if isinstance(layout, awkward.contents.RecordArray) and not layout.fields:
-                forms.pop(name)
-                continue
-            output[name] = forms.pop(name)
+            if isinstance(layout, awkward.contents.ListOffsetArray):
+                if isinstance(layout.content, awkward.contents.RecordArray):
+                    if not layout.content.fields:
+                        forms.pop(name)
+                    continue
+                output[name] = forms.pop(name)
+            elif isinstance(layout, awkward.contents.RecordArray):
+                if not layout.fields:
+                    continue
+                record_name = name.split("/")[0]
+                contents = {
+                    k[2 * len(record_name) + 2 :]: forms.pop(k)
+                    for k in list(forms)
+                    if k.startswith(record_name + "/")
+                }
+                if not contents:
+                    continue
+                output[record_name] = _zip_shared_offsets(
+                    sort_dict(contents),
+                    record_name=self._datatype_mixins.get(
+                        record_name, "edm4hep_nanocollection"
+                    ),
+                )
+            else:
+                output[name] = forms.pop(name)
         return output, forms
 
     def _build_collections(self, forms):
-        all_collections = {name.split("/")[0] for name in forms if "/" in name}
+        all_collections = self._all_collections
 
         forms = self._process_components(forms, all_collections)
         forms = self._process_vector_members(forms, all_collections)
@@ -586,61 +816,35 @@ class EDM4HEP(BaseLayoutBuilder):
         return behavior
 
 
-class EDM4HEP_v00_99_00(EDM4HEP):
-    """EDM4HEP layout builder for edm4hep version 00.99.00"""
-
-    edm4hep_version = "00-99-00"
-
-
-class EDM4HEP_v00_10_05(EDM4HEP):
-    """EDM4HEP layout builder for edm4hep version 00.10.05"""
-
-    edm4hep_version = "00-10-05"
+def _versioned_builder(ver):
+    name = "EDM4HEP_v" + ver.replace("-", "_")
+    doc = f"EDM4HEP layout builder for edm4hep version {ver.replace('-', '.')}"
+    return type(
+        name,
+        (EDM4HEP,),
+        {"edm4hep_version": ver, "__doc__": doc, "__module__": __name__},
+    )
 
 
-class EDM4HEP_v00_10_04(EDM4HEP):
-    """EDM4HEP layout builder for edm4hep version 00.10.04"""
-
-    edm4hep_version = "00-10-04"
-
-
-class EDM4HEP_v00_10_03(EDM4HEP):
-    """EDM4HEP layout builder for edm4hep version 00.10.03"""
-
-    edm4hep_version = "00-10-03"
-
-
-class EDM4HEP_v00_10_02(EDM4HEP):
-    """EDM4HEP layout builder for edm4hep version 00.10.02"""
-
-    edm4hep_version = "00-10-02"
-
-
-class EDM4HEP_v00_10_01(EDM4HEP):
-    """EDM4HEP layout builder for edm4hep version 00.10.01"""
-
-    edm4hep_version = "00-10-01"
-
-
-_VERSION_MATCH = {
-    "latest": EDM4HEP,
-    "00.99.01": EDM4HEP,
-    "00.99.00": EDM4HEP_v00_99_00,
-    "00.10.05": EDM4HEP_v00_10_05,
-    "00.10.04": EDM4HEP_v00_10_04,
-    "00.10.03": EDM4HEP_v00_10_03,
-    "00.10.02": EDM4HEP_v00_10_02,
-    "00.10.01": EDM4HEP_v00_10_01,
-}
+# Module globals keep EDM4HEP_v* importable by name and picklable by reference.
+_versioned_builders = {ver: _versioned_builder(ver) for ver in versions}
+globals().update({b.__name__: b for b in _versioned_builders.values()})
 
 
 def edm4hep_version(ver="latest"):
-    """Return the EDM4HEP layout builder class for a given edm4hep.yaml version."""
-    schema = _VERSION_MATCH.get(ver)
-    if schema is None:
+    """Return the EDM4HEP layout builder class for a given edm4hep.yaml version.
+
+    ``ver`` is written either as ``"00.99.04"`` or ``"00-99-04"``; ``"latest"``
+    (default) selects the newest bundled version. The available versions are
+    listed in ``awkward_zipper.assets.versions``.
+    """
+    if ver == "latest":
+        return EDM4HEP
+    builder = _versioned_builders.get(ver.replace(".", "-"))
+    if builder is None:
         msg = (
             f"The given version {ver} is not found. "
-            f"Available versions are: {', '.join(_VERSION_MATCH)}."
+            f"Available versions are : {', '.join(versions)} ."
         )
         raise ValueError(msg)
-    return schema
+    return builder
