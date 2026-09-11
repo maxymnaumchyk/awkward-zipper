@@ -252,11 +252,6 @@ class TwoVector(MomentumAwkward2D):
         """
         return self.deltaphi(other)
 
-    @property
-    def unit(self):
-        """Unit vector, a vector of length 1 pointing in the same direction"""
-        return self / self.r
-
     def __awkward_validation__(self):
         errors, has_cart, has_polar, has_longitudinal, has_temporal = (
             _coordinate_validation(tuple(self.fields))
@@ -371,11 +366,6 @@ class ThreeVector(MomentumAwkward3D):
         Returns a value within [-pi, pi)
         """
         return self.deltaphi(other)
-
-    @property
-    def unit(self):
-        """Unit vector, a vector of length 1 pointing in the same direction"""
-        return self / self.rho
 
     def __awkward_validation__(self):
         errors, has_cart, has_polar, has_longitudinal, has_temporal = (
