@@ -370,20 +370,16 @@ class FCCSchema(BaseLayoutBuilder):
 class FCCSchema_edm4hep1(EDM4HEP):
     """FCC layout builder for samples produced with edm4hep >= 1.
 
-    Inherits from :class:`~awkward_zipper.EDM4HEP` (matching coffea's
-    ``FCCSchema_edm4hep1(EDM4HEPSchema)``).
-
-    .. note::
-       ``copy_links_to_target_datatype`` is supported by the builder but left
-       disabled here. Coffea copies a Link branch onto its target collection at the
-       *form* level without checking shapes, which yields a record whose declared
-       length exceeds the copied buffer (e.g. 625 vs 620 items). That is fine for
-       coffea's lazy per-branch mapping but is not a valid awkward layout -- it
-       fails to round-trip through ``ak.from_buffers``. Enable it once the shapes
-       are reconciled upstream.
+    Inherits from :class:`~awkward_zipper.EDM4HEP` version 00.99.01 (matching
+    coffea's ``FCCSchema_edm4hep1(EDM4HEPSchema)``) and adds more functionality
+    on top of it: the Links are also copied onto the collection they point to,
+    with ``_datatype_priority`` choosing ``ReconstructedParticles`` among the
+    collections sharing the ``ReconstructedParticle`` datatype (e.g. ``Jet``).
     """
 
-    copy_links_to_target_datatype = False
+    edm4hep_version = "00-99-01"
+
+    copy_links_to_target_datatype = True
     _datatype_priority: tp.ClassVar = {
         "ReconstructedParticle": "ReconstructedParticles"
     }
@@ -425,7 +421,7 @@ class FCC:
         if version == "pre-edm4hep1":
             return FCCSchema
         msg = (
-            f"Unknown FCC version {version}. "
-            "Available: 'latest', 'pre-edm4hep1', 'edm4hep1'."
+            f"Invalid FCC schema version {version!r}. "
+            "Valid versions: 'latest', 'pre-edm4hep1', 'edm4hep1'."
         )
         raise ValueError(msg)
