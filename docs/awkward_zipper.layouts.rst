@@ -26,6 +26,14 @@ awkward\_zipper.layouts.delphes
    :show-inheritance:
    :undoc-members:
 
+awkward\_zipper.layouts.edm4hep
+-------------------------------------------
+
+.. automodule:: awkward_zipper.layouts.edm4hep
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 awkward\_zipper.layouts.nanoaod
 -------------------------------------------
 

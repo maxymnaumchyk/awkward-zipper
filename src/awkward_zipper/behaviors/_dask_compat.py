@@ -48,3 +48,26 @@ def _isinstance(arg: Any, *class_prefixes: str) -> bool:
 def _import_dask_awkward():
     msg = "dask mode is not supported by awkward-zipper (eager/virtual only)"
     raise ModuleNotFoundError(msg)
+
+
+class _DaskMethod:
+    def __init__(self, impl):
+        self._impl = impl
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._impl.__get__(instance, owner)
+
+    def dask(self, func):
+        # eager/virtual only: keep the eager implementation, ignore dask variant
+        return self
+
+
+def dask_method(maybe_func=None, *, no_dispatch=False):
+    def wrapper(func):
+        return _DaskMethod(func)
+
+    if maybe_func is None:
+        return wrapper
+    return wrapper(maybe_func)

@@ -42,6 +42,14 @@ awkward\_zipper.behaviors.delphes
    :show-inheritance:
    :undoc-members:
 
+awkward\_zipper.behaviors.edm4hep
+---------------------------------------------
+
+.. automodule:: awkward_zipper.behaviors.edm4hep
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 awkward\_zipper.behaviors.nanoaod
 ---------------------------------------------
 
