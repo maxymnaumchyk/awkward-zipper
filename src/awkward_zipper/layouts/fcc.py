@@ -5,7 +5,6 @@ import awkward
 
 from awkward_zipper.awkward_util import (
     _non_materializing_get_field,
-    _record_length,
     _rewrap,
 )
 from awkward_zipper.kernels import (
@@ -15,29 +14,11 @@ from awkward_zipper.kernels import (
     nested_local2global,
 )
 from awkward_zipper.layouts.base import BaseLayoutBuilder
-from awkward_zipper.layouts.edm4hep import EDM4HEP, sort_dict
+from awkward_zipper.layouts.edm4hep import EDM4HEP, _zip_shared_offsets, sort_dict
 
 _idxs = re.compile(r".*[#]+[0-9]+")
 _trailing_under = re.compile(r".*_[0-9]")
 _square_braces = re.compile(r".*\[.*\]")
-
-
-def _zip_shared_offsets(members, record_name=None, parameters=None, offsets=None):
-    """Zip layouts that share per-event offsets into one jagged record."""
-    names = list(members.keys())
-    layouts = list(members.values())
-    if offsets is None:
-        offsets = layouts[0].offsets
-    contents = [layout.content for layout in layouts]
-    params = {}
-    if record_name is not None:
-        params["__record__"] = record_name
-    if parameters:
-        params.update(parameters)
-    record = awkward.contents.RecordArray(
-        contents, names, length=_record_length(contents), parameters=params
-    )
-    return awkward.contents.ListOffsetArray(offsets=offsets, content=record)
 
 
 class FCCSchema(BaseLayoutBuilder):
