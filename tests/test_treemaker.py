@@ -104,6 +104,39 @@ def test_nested_subcollections():
     )
 
 
+def _record_fields(form):
+    """Nested record field names, in order (array_equal ignores field order)."""
+    if isinstance(form, awkward.forms.RecordForm):
+        return [
+            (f, _record_fields(c))
+            for f, c in zip(form.fields, form.contents, strict=True)
+        ]
+    if isinstance(form, awkward.forms.UnionForm):
+        return [_record_fields(c) for c in form.contents]
+    if hasattr(form, "content"):
+        return _record_fields(form.content)
+    return None
+
+
+def _collection_fields(form):
+    """Per-collection field order; coffea builds the top-level record from a set,
+    so its own order varies from run to run and is compared as a mapping."""
+    return {
+        f: _record_fields(c) for f, c in zip(form.fields, form.contents, strict=True)
+    }
+
+
+def test_field_order():
+    # array_equal matches record fields by name; the layouts must also list them
+    # in the same order as coffea
+    assert _collection_fields(zipper_array.layout.form) == _collection_fields(
+        coffea_array.layout.form
+    )
+    assert _collection_fields(zipper_array_virtual.layout.form) == _collection_fields(
+        coffea_array_virtual.layout.form
+    )
+
+
 def test_behaviors():
     # behavior of coffea and zipper should be the same, except for Systematics
     diff = set(coffea_array.behavior) - set(zipper_array.behavior)
@@ -122,4 +155,5 @@ if __name__ == "__main__":
     test_no_materialization()
     test_composite_vector_collections()
     test_nested_subcollections()
+    test_field_order()
     test_behaviors()

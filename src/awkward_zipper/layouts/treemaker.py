@@ -4,6 +4,7 @@ import awkward
 
 from awkward_zipper.awkward_util import (
     _append_record_fields,
+    _check_equal_lengths,
     _jagged_content,
     _jagged_offsets,
     _non_materializing_get_field,
@@ -74,12 +75,16 @@ class TreeMaker(BaseLayoutBuilder):
 
     def _build_composite_objects(self, forms):
         """Zip the split ROOT vector branches into vector-like collections."""
+        # any split (dotted) branch is a composite object; a skimmed n-tuple stores
+        # the object under a trailing underscore (``Jets_.fCoordinates.fPt``)
         composite_objects = sorted(
-            {k.split(".")[0] for k in forms if ".fCoordinates." in k}
+            {k.split(".")[0].rstrip("_") for k in forms if "." in k}
         )
         for objname in composite_objects:
             components = {
-                k.split(".")[-1]: k for k in list(forms) if k.startswith(objname + ".")
+                k.split(".")[-1]: k
+                for k in list(forms)
+                if k.startswith((objname + ".", objname + "_."))
             }
             present = set(components)
             if present == set(self._lorentz_map.values()):
@@ -142,20 +147,37 @@ class TreeMaker(BaseLayoutBuilder):
                 )
 
             if cname in forms:
+                if not isinstance(forms[cname], awkward.contents.ListOffsetArray):
+                    msg = f"{cname} isn't a jagged array, not sure what to do"
+                    raise NotImplementedError(msg)
                 new_members = {
                     k[len(cname) + 1 :]: _jagged_content(forms.pop(k)) for k in items
                 }
                 forms[cname] = _append_record_fields(forms[cname], new_members)
             else:
-                # pure "_"-grouped collection with no composite base: the shared
-                # offsets come from any member (all share the same per-event counts)
-                offsets = _jagged_offsets(forms[items[0]])
-                new_members = {
-                    k[len(cname) + 1 :]: _jagged_content(forms.pop(k)) for k in items
-                }
-                forms[cname] = _zip_jagged(new_members, offsets)
+                # pure "_"-grouped collection with no composite base
+                members = {k[len(cname) + 1 :]: forms.pop(k) for k in items}
+                forms[cname] = self._zip_members(members)
 
         return subcollections
+
+    @staticmethod
+    def _zip_members(members):
+        """Zip member layouts into one record (coffea's ``zip_forms``).
+
+        Jagged members share the offsets of the first one (all share the same
+        per-event counts); anything else is zipped into a flat per-event record.
+        """
+        layouts = list(members.values())
+        if all(
+            isinstance(layout, awkward.contents.ListOffsetArray) for layout in layouts
+        ):
+            offsets = _jagged_offsets(layouts[0])
+            contents = {k: _jagged_content(v) for k, v in members.items()}
+            return _zip_jagged(contents, offsets)
+        return awkward.contents.RecordArray(
+            layouts, list(members.keys()), length=_check_equal_lengths(layouts)
+        )
 
     def _nest_subcollections(self, forms, subcollections):
         for sub in subcollections:
