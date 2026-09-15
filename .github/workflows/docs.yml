@@ -22,7 +22,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-           python-version: "${{ env.X86_64_PYTHON_VERSION }}"
+          python-version: "3.12"
 
       - name: Install dependencies
         working-directory: docs
